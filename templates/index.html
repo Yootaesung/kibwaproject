@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>직무 정보 생성기</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        body {
+            padding: 20px;
+            background-color: #f8f9fa;
+        }
+        .container {
+            max-width: 800px;
+            margin-top: 30px;
+            background: white;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 0 15px rgba(0,0,0,0.1);
+        }
+        .job-category {
+            margin-bottom: 30px;
+        }
+        .job-category h3 {
+            color: #2c3e50;
+            border-bottom: 2px solid #3498db;
+            padding-bottom: 5px;
+            margin-bottom: 15px;
+        }
+        .job-list {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+        }
+        .job-btn {
+            margin: 2px;
+            white-space: nowrap;
+        }
+        #loading {
+            display: none;
+            text-align: center;
+            margin: 20px 0;
+        }
+        .spinner-border {
+            width: 3rem; 
+            height: 3rem;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1 class="text-center mb-4">직무 정보 생성기</h1>
+        <p class="text-center mb-4">관심 있는 직무를 선택하면 상세한 직무 정보를 PDF로 다운로드할 수 있습니다.</p>
+        
+        <form id="jobForm" class="mb-4">
+            <div class="mb-3">
+                <label for="jobTitle" class="form-label">직무 선택</label>
+                <select class="form-select" id="jobTitle" required>
+                    <option value="" selected disabled>직무를 선택하세요</option>
+                    {% for category, jobs in job_categories.items() %}
+                    <optgroup label="{{ category }}">
+                        {% for job in jobs %}
+                        <option value="{{ job }}">{{ job }}</option>
+                        {% endfor %}
+                    </optgroup>
+                    {% endfor %}
+                </select>
+            </div>
+            <button type="submit" class="btn btn-primary w-100">PDF 생성하기</button>
+        </form>
+        
+        <div id="loading">
+            <div class="spinner-border text-primary" role="status">
+                <span class="visually-hidden">Loading...</span>
+            </div>
+            <p class="mt-2">직무 정보를 생성 중입니다. 잠시만 기다려주세요...</p>
+        </div>
+        
+        <div id="result" class="mt-4" style="display: none;">
+            <div class="alert alert-success" role="alert">
+                PDF가 성공적으로 생성되었습니다! <a href="#" id="downloadLink" class="alert-link">여기를 클릭</a>하여 다운로드하세요.
+            </div>
+        </div>
+    </div>
+
+    <script>
+        document.getElementById('jobForm').addEventListener('submit', async function(e) {
+            e.preventDefault();
+            
+            const jobTitle = document.getElementById('jobTitle').value;
+            const loading = document.getElementById('loading');
+            const result = document.getElementById('result');
+            
+            // 로딩 표시
+            loading.style.display = 'block';
+            result.style.display = 'none';
+            
+            try {
+                // 직무 정보 생성 요청
+                const response = await fetch('/generate', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/x-www-form-urlencoded',
+                    },
+                    body: `job_title=${encodeURIComponent(jobTitle)}`
+                });
+                
+                if (!response.ok) {
+                    throw new Error('서버 오류가 발생했습니다.');
+                }
+                
+                const data = await response.json();
+                
+                // 다운로드 링크 설정
+                const downloadLink = document.getElementById('downloadLink');
+                downloadLink.href = `/download/${data.filename}`;
+                downloadLink.download = data.filename;
+                
+                // 결과 표시
+                loading.style.display = 'none';
+                result.style.display = 'block';
+                
+                // 자동 다운로드
+                window.location.href = downloadLink.href;
+                
+            } catch (error) {
+                console.error('Error:', error);
+                loading.style.display = 'none';
+                alert('오류가 발생했습니다: ' + error.message);
+            }
+        });
+    </script>
+    
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+</body>
+</html>
