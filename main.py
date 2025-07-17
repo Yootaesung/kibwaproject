@@ -1,19 +1,27 @@
 import os
 import asyncio
 import json
-from fastapi import FastAPI, Request, Form, Depends, HTTPException
-from fastapi.responses import HTMLResponse, FileResponse
+from fastapi import FastAPI, Request, Form, Depends, HTTPException, UploadFile, File
+from fastapi.responses import HTMLResponse, FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
-import openai
 from dotenv import load_dotenv
-from reportlab.lib.pagesizes import letter
-from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, PageBreak
-from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
-from reportlab.lib.enums import TA_LEFT, TA_CENTER
-from reportlab.lib import colors
-import json
-from typing import Optional
+# from reportlab.lib.pagesizes import letter # PDF 생성 관련 모듈은 더 이상 필요 없음
+# from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, PageBreak # PDF 생성 관련 모듈은 더 이상 필요 없음
+# from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle, ListStyle # PDF 생성 관련 모듈은 더 이상 필요 없음
+# from reportlab.lib.enums import TA_LEFT, TA_CENTER # PDF 생성 관련 모듈은 더 이상 필요 없음
+# from reportlab.lib import colors # PDF 생성 관련 모듈은 더 이상 필요 없음
+from typing import Optional, List, Dict
+from urllib.parse import quote # URL 인코딩을 위해 추가
+import random # 임시 합격 가능성 생성을 위해 추가
+
+import google.generativeai as genai
+# from reportlab.pdfbase import pdfmetrics # PDF 생성 관련 모듈은 더 이상 필요 없음
+# from reportlab.pdfbase.ttfonts import TTFont # PDF 생성 관련 모듈은 더 이상 필요 없음
+
+# 새로 추가된 임포트
+from job_data import JOB_CATEGORIES, JOB_DETAILS, ALL_JOB_SLUGS # job_data.py에서 임포트
+# from prompts import generate_job_info_prompt # 이 프롬프트는 기존 PDF 생성용이므로 더 이상 필요 없음
 
 # 환경 변수 로드
 load_dotenv()
@@ -21,249 +29,167 @@ load_dotenv()
 app = FastAPI()
 
 # 환경 변수에서 API 키 로드
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-if not OPENAI_API_KEY:
-    print("경고: OPENAI_API_KEY가 설정되지 않았습니다. .env 파일을 확인해주세요.")
-    raise ValueError("OpenAI API 키가 설정되지 않았습니다.")
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+if not GEMINI_API_KEY:
+    print("경고: GEMINI_API_KEY가 설정되지 않았습니다. .env 파일을 확인해주세요.")
+    raise ValueError("Gemini API 키가 설정되지 않았습니다.")
 
-# OpenAI API 키 설정
-openai.api_key = OPENAI_API_KEY
+# Gemini API 설정
+genai.configure(api_key=GEMINI_API_KEY)
+try:
+    print("--- 사용 가능한 Gemini 모델 목록 ---")
+    for m in genai.list_models():
+        if "generateContent" in m.supported_generation_methods:
+            print(m.name)
+    print("----------------------------------")
+except Exception as e:
+    print(f"모델 목록 조회 실패: {e}")
 
 # 정적 파일 및 템플릿 설정
 app.mount("/static", StaticFiles(directory="static"), name="static")
 templates = Jinja2Templates(directory="templates")
 
-# 직무 카테고리 및 직무 목록
-JOB_CATEGORIES = {
-    "개발": [
-        "프론트엔드 개발자", "백엔드 개발자", "앱 개발자", "AI/데이터 개발자", "DevOps/인프라 엔지니어"
-    ],
-    "마케팅/광고": [
-        "디지털 마케터", "콘텐츠 마케터", "퍼포먼스 마케터", "마케팅 기획자"
-    ],
-    "경영/비즈니스": [
-        "사업기획자", "프로덕트 매니저(PM)", "재무/회계 담당자", "HR 담당자", "영업기획/BD"
-    ],
-    "디자인": [
-        "UX/UI 디자이너", "그래픽 디자이너", "브랜드 디자이너", "모션/영상 디자이너"
-    ],
-    "영업": [
-        "B2B 영업", "B2C 영업", "기술영업", "영업기획/관리"
-    ],
-    "엔지니어링/설계": [
-        "기계 설계 엔지니어", "전기/전자 설계 엔지니어", "제품 개발 엔지니어", "품질관리(QA/QC)"
-    ],
-    "제조/생산": [
-        "생산직 오퍼레이터", "생산관리자", "품질관리자", "설비 유지보수 엔지니어"
-    ],
-    "의료/제약/바이오": [
-        "의사", "간호사", "약사", "임상시험 코디네이터(CRA)", "바이오 연구원"
-    ],
-    "금융": [
-        "은행원", "자산운용 매니저", "금융 컨설턴트(FP)", "투자 분석가"
-    ],
-    "미디어": [
-        "방송 PD", "콘텐츠 작가", "영상 편집자", "유튜브 콘텐츠 기획자"
-    ],
-    "게임 제작": [
-        "게임 기획자", "게임 프로그래머", "게임 아티스트", "게임 QA/테스터"
-    ],
-    "물류/무역": [
-        "물류 관리자", "수출입 담당자", "구매 담당자", "통관사"
-    ],
-    "법률/법기관": [
-        "변호사", "검사", "수사관", "기업 법무 담당자"
-    ],
-    "건설/시설": [
-        "건축가", "시공 관리자(현장소장)", "전기/소방 기술자", "인테리어 디자이너"
-    ],
-    "식음료": [
-        "조리사(셰프)", "바리스타", "제과제빵사", "식품 품질관리자"
-    ],
-    "공공/복지": [
-        "사회복지사", "공무원", "요양보호사", "NGO 활동가"
-    ],
-    "정보보호": [
-        "보안 엔지니어", "보안 관제 요원(SOC)", "개인정보보호 담당자(DPO)", "사이버 위협 분석가"
-    ]
-}
+# --- 기존 PDF 관련 함수들은 모두 삭제 (또는 주석 처리) ---
+# get_styles, generate_job_info, create_pdf 함수는 더 이상 사용되지 않음
 
-# PDF 스타일 설정
-def get_styles():
-    styles = getSampleStyleSheet()
-    
-    # 기본 스타일을 수정하여 사용
-    styles['Title'].fontSize = 24
-    styles['Title'].leading = 30
-    styles['Title'].spaceAfter = 20
-    styles['Title'].alignment = TA_CENTER
-    
-    styles['Heading1'].fontSize = 18
-    styles['Heading1'].leading = 22
-    styles['Heading1'].spaceAfter = 10
-    styles['Heading1'].spaceBefore = 10
-    styles['Heading1'].bold = True
-    
-    styles['Normal'].fontSize = 12
-    styles['Normal'].leading = 16
-    styles['Normal'].spaceAfter = 8
-    
-    return styles
-
-# OpenAI를 사용하여 직무 정보 생성
-async def generate_job_info(job_title: str) -> dict:
-    try:
-        # 환경 변수에서 API 키 확인
-        if not OPENAI_API_KEY:
-            return {"error": "OpenAI API 키가 설정되지 않았습니다. .env 파일을 확인해주세요."}
-            
-        # OpenAI API 호출
-        response = await asyncio.to_thread(
-            openai.ChatCompletion.create,
-            model="gpt-3.5-turbo",
-            messages=[
-                {"role": "system", "content": "당신은 직업 상담 전문가입니다. 사용자가 요청한 직무에 대한 상세한 정보를 제공해주세요. 응답은 항상 유효한 JSON 형식이어야 합니다."},
-                {"role": "user", "content": f"{job_title} 직무에 대한 상세한 정보를 다음 형식의 JSON으로 제공해주세요:\n"
-                                          "1. 직무 개요 및 요구 사항 (직무 설명, 필요 역량, 학력 및 전공)\n"
-                                          "2. 역량 강화 및 준비 과정 (자격증, 어학 능력, 교육 프로그램)\n"
-                                          "3. 실무 경험 쌓기 (인턴십/대외활동)\n"
-                                          "4. 채용 정보 (채용 트렌드, 채용 계획/일정, 채용 공고 링크)\n"
-                                          "응답은 반드시 JSON 형식이어야 하며, 각 섹션은 키-값 쌍으로 구성해주세요."}
-            ],
-            temperature=0.7,
-            max_tokens=1000
-        )
-        
-        # 응답에서 내용 추출
-        content = response.choices[0].message.content
-        
-        # 한글 인코딩 처리
-        try:
-            content = content.encode('utf-8').decode('utf-8')
-        except UnicodeError:
-            print("Warning: Encoding error occurred while processing response")
-        
-        # 응답이 JSON 형식이 아닌 경우를 대비해 파싱
-        try:
-            return json.loads(content)
-        except json.JSONDecodeError:
-            # JSON 파싱에 실패하면 텍스트를 그대로 반환
-            return {"error": "응답을 처리하는 중 오류가 발생했습니다.", "raw_response": content}
-    except Exception as e:
-        print(f"Error generating job info: {str(e)}")
-        return {"error": str(e)}
-
-# PDF 생성
-def create_pdf(data: dict, filename: str):
-    # 한글 폰트 설정
-    try:
-        # 한글 폰트 등록
-        from reportlab.pdfbase import pdfmetrics
-        from reportlab.pdfbase.ttfonts import TTFont
-        
-        # 설치된 한글 폰트를 순서대로 시도
-        try:
-            # Nanum 폰트 시도
-            pdfmetrics.registerFont(TTFont('NanumGothic', '/usr/share/fonts/truetype/nanum/NanumGothic.ttf'))
-            font_name = 'NanumGothic'
-            print("NanumGothic 폰트 사용")
-        except Exception as e:
-            print(f"NanumGothic 폰트 등록 실패: {str(e)}")
-            try:
-                # Noto Sans CJK 폰트 시도
-                pdfmetrics.registerFont(TTFont('NotoSans', '/usr/share/fonts/truetype/noto/NotoSansCJK-Regular.ttc'))
-                font_name = 'NotoSans'
-                print("NotoSans 폰트 사용")
-            except Exception as e:
-                print(f"Noto Sans 폰트 등록 실패: {str(e)}")
-                # 마지막으로 기본 폰트 사용
-                font_name = 'Helvetica'
-                print("기본 폰트 사용")
-    except Exception as e:
-        print(f"폰트 설정 중 오류 발생: {str(e)}")
-        font_name = 'Helvetica'
-    
-    # PDF 설정
-    doc = SimpleDocTemplate(
-        filename,
-        pagesize=letter,
-        rightMargin=72,
-        leftMargin=72,
-        topMargin=72,
-        bottomMargin=72
-    )
-    
-    # 스타일 정의
-    styles = get_styles()
-    
-    # 한글 폰트를 사용하도록 스타일 수정
-    for name in ['Title', 'Heading1', 'Normal']:
-        style = styles[name]
-        style.fontName = font_name
-        style.leading = style.fontSize * 1.5  # 줄 간격 조정
-    
-    elements = []
-    
-    # 제목 추가
-    elements.append(Paragraph(data.get("title", "직무 정보 보고서"), styles["Title"]))
-    elements.append(Spacer(1, 20))
-    
-    # 각 섹션 처리
-    for key, content in data.items():
-        if key == "title":
-            continue
-            
-        if isinstance(content, dict):
-            # 섹션 제목 추가
-            elements.append(Paragraph(key, styles["Heading1"]))
-            elements.append(Spacer(1, 12))
-            
-            # 각 하위 항목 처리
-            for subkey, subcontent in content.items():
-                if isinstance(subcontent, str):
-                    # 하위 항목 제목
-                    elements.append(Paragraph(f"• {subkey}", styles["Normal"]))
-                    # 하위 항목 내용
-                    elements.append(Paragraph(str(subcontent), styles["Normal"]))
-                    elements.append(Spacer(1, 6))
-        else:
-            # 단일 섹션 처리
-            elements.append(Paragraph(key, styles["Heading1"]))
-            elements.append(Spacer(1, 6))
-            elements.append(Paragraph(str(content), styles["Normal"]))
-            elements.append(Spacer(1, 12))
-    
-    doc.build(elements)
-
-# 라우트
+# --- 새로운 라우트: 메인 페이지 (직무 선택 페이지) ---
 @app.get("/", response_class=HTMLResponse)
 async def read_root(request: Request):
+    """
+    초기 진입 페이지. 각 직무 카테고리 및 직무 목록을 보여줍니다.
+    ZEP에서 이 URL을 웹뷰로 열고, 사용자가 직무를 선택하면 해당 직무의 분석 페이지로 이동합니다.
+    """
     return templates.TemplateResponse("index.html", {"request": request, "job_categories": JOB_CATEGORIES})
 
-@app.post("/generate")
-async def generate_report(job_title: str = Form(...)):
-    # 직무 정보 생성
-    job_info = await generate_job_info(job_title)
-    
-    if "error" in job_info:
-        raise HTTPException(status_code=500, detail=job_info["error"])
-    
-    # PDF 생성
-    filename = f"{job_title}_report.pdf".replace(" ", "_")
-    filepath = f"static/{filename}"
-    
-    # PDF에 제목 추가
-    job_info["title"] = f"{job_title} 직무 분석 보고서"
-    create_pdf(job_info, filepath)
-    
-    return {"filename": filename}
+# --- 새로운 라우트: 직무별 분석 페이지 ---
+@app.get("/analysis/{job_slug}", response_class=HTMLResponse)
+async def get_job_analysis_page(request: Request, job_slug: str):
+    """
+    각 직무별 합격 가능성 분석 도구 페이지를 렌더링합니다.
+    URL 슬러그를 기반으로 해당 직무의 역량 및 자격증 데이터를 전달합니다.
+    """
+    # job_slug를 원래 직무명으로 변환 (예: "frontend-developer" -> "프론트엔드 개발자")
+    # 실제로는 JOB_DETAILS에서 역으로 찾아야 함. 여기서는 편의상 간단히 처리
+    original_job_title = ""
+    for category, jobs in JOB_CATEGORIES.items():
+        for job_title in jobs:
+            if job_title.replace(" ", "-").replace("/", "-").lower() == job_slug:
+                original_job_title = job_title
+                break
+        if original_job_title:
+            break
 
-@app.get("/download/{filename}")
-async def download_file(filename: str):
-    filepath = f"static/{filename}"
-    if not os.path.exists(filepath):
-        raise HTTPException(status_code=404, detail="File not found")
-    return FileResponse(filepath, filename=filename, media_type='application/pdf')
+    if not original_job_title:
+        raise HTTPException(status_code=404, detail="Job not found")
+
+    job_data = JOB_DETAILS.get(original_job_title)
+    if not job_data:
+        # JOB_DETAILS에 없는 직무의 경우 기본값 또는 에러 처리
+        job_data = {
+            "competencies": [],
+            "certifications": [],
+            "description": f"'{original_job_title}' 직무에 대한 상세 정보가 준비되지 않았습니다. 일반적인 이력서 분석을 진행합니다."
+        }
+        # raise HTTPException(status_code=404, detail=f"Details for job '{original_job_title}' not found")
+
+    return templates.TemplateResponse("analysis_tool.html", {
+        "request": request,
+        "job_title": original_job_title,
+        "job_slug": job_slug,
+        "job_details": job_data
+    })
+
+
+# --- 새로운 라우트: 이력서 분석 API 엔드포인트 ---
+@app.post("/api/analyze/{job_slug}")
+async def analyze_application(
+    job_slug: str,
+    # company_name: Optional[str] = Form(None), # 회사명은 선택사항, 필요하면 다시 추가
+    resume_text: Optional[str] = Form(None), # 직접 입력된 이력서 텍스트
+    resume_file: Optional[UploadFile] = File(None), # 업로드된 이력서 파일
+    selected_competencies: Optional[List[str]] = Form(None), # 선택된 역량 체크박스
+    selected_certifications: Optional[List[str]] = Form(None) # 선택된 자격증
+):
+    """
+    사용자가 제출한 서류를 기반으로 합격 가능성을 분석하고 결과를 반환합니다.
+    이 엔드포인트는 AI 모델을 호출하여 실제 분석을 수행합니다.
+    """
+    # job_slug를 원래 직무명으로 변환
+    original_job_title = ""
+    for category, jobs in JOB_CATEGORIES.items():
+        for job_title in jobs:
+            if job_title.replace(" ", "-").replace("/", "-").lower() == job_slug:
+                original_job_title = job_title
+                break
+        if original_job_title:
+            break
+
+    if not original_job_title:
+        raise HTTPException(status_code=404, detail="Job not found")
+
+    # 이력서 내용 추출
+    full_resume_content = ""
+    if resume_text:
+        full_resume_content += resume_text
+    
+    if resume_file:
+        try:
+            # 파일 내용을 읽어 텍스트로 변환 (간단한 텍스트 파일만 가정)
+            # PDF, DOCX 파일 처리는 별도 라이브러리(PyPDF2, python-docx) 필요
+            file_content = await resume_file.read()
+            full_resume_content += file_content.decode('utf-8')
+        except Exception as e:
+            print(f"File upload processing error: {e}")
+            return JSONResponse(status_code=400, content={"error": "파일 처리 중 오류가 발생했습니다. 텍스트 파일인지 확인해주세요."})
+
+    # TODO: Gemini API를 이용한 실제 분석 로직 구현
+    # prompts.py에 analyze_resume_prompt 함수를 정의하고 사용
+    # 현재는 더미 데이터로 대체
+    
+    # AI 분석에 필요한 정보: original_job_title, full_resume_content, selected_competencies, selected_certifications, company_name(선택)
+    
+    # 임시 합격 가능성 (실제 AI 분석 결과로 대체 필요)
+    # 예시: 이력서 길이가 길수록, 역량/자격증을 많이 선택할수록 가능성 증가 (아주 단순한 로직)
+    dummy_probability = 0
+    if full_resume_content:
+        dummy_probability += min(len(full_resume_content) // 100, 50) # 텍스트 길이에 따라 최대 50점
+    if selected_competencies:
+        dummy_probability += len(selected_competencies) * 3 # 선택된 역량당 3점
+    if selected_certifications:
+        dummy_probability += len(selected_certifications) * 5 # 선택된 자격증당 5점
+
+    # 직무에 따른 보너스 (예시)
+    if "개발자" in original_job_title:
+        dummy_probability += 10 # 개발 직무에 10점 보너스
+    
+    final_probability = min(100, dummy_probability + random.randint(0, 20)) # 최종 점수 0-100 사이, 약간의 랜덤성
+    
+    # 꼬리 유형 결정
+    tail_type = "bone"
+    if 0 <= final_probability <= 10:
+        tail_type = "bone"
+    elif 11 <= final_probability <= 40:
+        tail_type = "basic_tail"
+    elif 41 <= final_probability <= 70:
+        tail_type = "normal_tail"
+    elif 71 <= final_probability <= 90:
+        tail_type = "colorful_tail"
+    else: # 91 ~ 100
+        tail_type = "gorgeous_tail"
+
+    # AI 기반 피드백 (임시)
+    feedback_message = "제출된 서류를 분석한 결과입니다. 현재는 초기 개발 단계이므로, 더 정확한 분석을 위해 AI 모델 학습이 필요합니다."
+    if final_probability < 50:
+        feedback_message += "\n강점 보완 및 부족한 부분을 채워나가시면 합격 가능성을 높일 수 있습니다."
+    else:
+        feedback_message += "\n훌륭한 강점을 가지고 계시네요! 꾸준히 발전시켜 나가세요."
+
+    return JSONResponse(content={
+        "success": True,
+        "probability": final_probability,
+        "tail_type": tail_type,
+        "feedback": feedback_message
+    })
 
 if __name__ == "__main__":
     import uvicorn

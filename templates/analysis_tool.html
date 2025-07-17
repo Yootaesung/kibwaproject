@@ -1,0 +1,262 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ job_title }} 합격 가능성 분석</title>
+    <style>
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #f8f9fa; color: #343a40; margin: 0; padding: 20px; display: flex; justify-content: center; align-items: flex-start; min-height: 100vh; }
+        .container {
+            background-color: #ffffff;
+            border-radius: 12px;
+            box-shadow: 0 8px 24px rgba(0, 0, 0, 0.1);
+            padding: 40px;
+            width: 90%;
+            max-width: 1000px;
+            box-sizing: border-box;
+            display: flex;
+            flex-direction: column;
+            gap: 30px;
+        }
+        h1 { color: #0056b3; text-align: center; margin-bottom: 30px; font-size: 2.5em; }
+        .section-title { font-size: 1.4em; color: #495057; margin-bottom: 15px; border-bottom: 2px solid #e9ecef; padding-bottom: 8px; }
+
+        /* Form Styles */
+        .input-group { margin-bottom: 20px; }
+        .input-group label { display: block; margin-bottom: 8px; font-weight: bold; color: #343a40; }
+        .input-group textarea, .input-group input[type="file"] {
+            width: 100%;
+            padding: 12px;
+            border: 1px solid #ced4da;
+            border-radius: 8px;
+            box-sizing: border-box;
+            font-size: 1em;
+            resize: vertical;
+            min-height: 120px;
+        }
+        .checkbox-group { display: flex; flex-wrap: wrap; gap: 15px; margin-bottom: 20px; }
+        .checkbox-group div { display: flex; align-items: center; background-color: #e9ecef; padding: 10px 15px; border-radius: 8px; transition: background-color 0.2s; }
+        .checkbox-group div:hover { background-color: #dee2e6; }
+        .checkbox-group input[type="checkbox"] { margin-right: 8px; transform: scale(1.2); }
+
+        .submit-button {
+            background-color: #28a745;
+            color: white;
+            padding: 15px 30px;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 1.3em;
+            font-weight: bold;
+            transition: background-color 0.3s ease, transform 0.2s ease;
+            width: 100%;
+        }
+        .submit-button:hover { background-color: #218838; transform: translateY(-3px); }
+        .submit-button:active { transform: translateY(0); }
+        .loading { display: none; text-align: center; margin-top: 20px; color: #6c757d; }
+
+        /* Result Section */
+        .result-section {
+            margin-top: 40px;
+            border-top: 2px dashed #007bff;
+            padding-top: 30px;
+            display: none; /* 초기에는 숨김 */
+        }
+        .result-section h2 { color: #007bff; font-size: 1.8em; text-align: center; margin-bottom: 25px; }
+        .fishbone-diagram {
+            position: relative;
+            width: 100%;
+            height: 300px; /* 고정 높이 */
+            background-color: #f0f0f0; /* 배경색 */
+            border-radius: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin-bottom: 30px;
+            overflow: hidden; /* 꼬리가 튀어나가지 않도록 */
+        }
+        .fishbone-diagram img {
+            max-height: 100%; /* 이미지 높이를 다이어그램 높이에 맞춤 */
+            width: auto;
+            object-fit: contain;
+            transition: all 0.5s ease-in-out; /* 꼬리 변화 애니메이션 */
+        }
+        .fishbone-head {
+            position: absolute;
+            left: 20px;
+            top: 50%;
+            transform: translateY(-50%);
+            font-size: 1.8em;
+            font-weight: bold;
+            color: #d9534f;
+            white-space: nowrap; /* 줄바꿈 방지 */
+        }
+        .fishbone-prob {
+            position: absolute;
+            right: 20px;
+            top: 50%;
+            transform: translateY(-50%);
+            font-size: 2.5em;
+            font-weight: bold;
+            color: #007bff;
+            animation: bounceIn 1s forwards;
+        }
+
+        .feedback-box {
+            background-color: #eaf6ff;
+            border: 1px solid #b3e0ff;
+            border-radius: 10px;
+            padding: 20px;
+            font-size: 1.1em;
+            line-height: 1.6;
+            white-space: pre-wrap; /* 줄바꿈 유지 */
+            text-align: left;
+        }
+        .feedback-box p { margin: 0 0 10px 0; }
+        .feedback-box strong { color: #0056b3; }
+
+        /* Fishbone Tail Animations/States (using simple image changes) */
+        /* ZEP 환경에서는 동적 SVG나 CSS 애니메이션이 더 좋지만, 여기서는 이미지 변경으로 간단화 */
+        .fishbone-diagram img.bone { content: url('/static/tail_bone.png'); width: 250px; } /* 0-10% */
+        .fishbone-diagram img.basic_tail { content: url('/static/tail_basic.png'); width: 280px; } /* 11-40% */
+        .fishbone-diagram img.normal_tail { content: url('/static/tail_normal.png'); width: 320px; } /* 41-70% */
+        .fishbone-diagram img.colorful_tail { content: url('/static/tail_colorful.png'); width: 350px; } /* 71-90% */
+        .fishbone-diagram img.gorgeous_tail { content: url('/static/tail_gorgeous.png'); width: 400px; } /* 91-100% */
+        
+        /* Animation for probability */
+        @keyframes bounceIn {
+            0% { transform: translateY(-50%) scale(0.5); opacity: 0; }
+            50% { transform: translateY(-50%) scale(1.1); opacity: 1; }
+            100% { transform: translateY(-50%) scale(1); }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>{{ job_title }} 합격 가능성 분석</h1>
+        <p>선택하신 직무는 <strong>{{ job_title }}</strong> 입니다. 아래 정보를 입력하여 합격 가능성을 분석해보세요.</p>
+        <p style="font-style: italic; color: #6c757d;">{{ job_details.description }}</p>
+
+        <form id="analysisForm">
+            <div class="input-group">
+                <label for="resume_text">📝 이력서 또는 자기소개서 내용 직접 입력:</label>
+                <textarea id="resume_text" name="resume_text" placeholder="이력서 또는 자기소개서의 주요 내용을 입력해주세요. (최대 5000자)"></textarea>
+            </div>
+            <div class="input-group">
+                <label for="resume_file">⬆️ 또는 이력서 파일 업로드 (PDF, TXT, DOCX 등):</label>
+                <input type="file" id="resume_file" name="resume_file" accept=".pdf,.txt,.docx">
+            </div>
+
+            <div class="input-group">
+                <div class="section-title">💡 {{ job_title }} 필수 역량 체크 (해당하는 역량을 모두 선택해주세요):</div>
+                <div class="checkbox-group">
+                    {% for comp in job_details.competencies %}
+                        <div>
+                            <input type="checkbox" id="comp_{{ loop.index }}" name="selected_competencies" value="{{ comp }}">
+                            <label for="comp_{{ loop.index }}">{{ comp }}</label>
+                        </div>
+                    {% endfor %}
+                    {% if not job_details.competencies %}
+                        <p>이 직무에 대한 역량 목록이 준비되지 않았습니다.</p>
+                    {% endif %}
+                </div>
+            </div>
+
+            <div class="input-group">
+                <div class="section-title">🏆 {{ job_title }} 관련 자격증 선택 (보유한 자격증을 선택해주세요):</div>
+                <div class="checkbox-group">
+                    {% for cert in job_details.certifications %}
+                        <div>
+                            <input type="checkbox" id="cert_{{ loop.index }}" name="selected_certifications" value="{{ cert }}">
+                            <label for="cert_{{ loop.index }}">{{ cert }}</label>
+                        </div>
+                    {% endfor %}
+                    {% if not job_details.certifications %}
+                        <p>이 직무에 대한 자격증 목록이 준비되지 않았습니다.</p>
+                    {% endif %}
+                </div>
+                <label for="other_certifications" style="margin-top: 15px;">기타 자격증 직접 입력 (쉼표로 구분):</label>
+                <input type="text" id="other_certifications" name="other_certifications" placeholder="예: SQLD, OCP, TOEIC">
+            </div>
+
+            <button type="submit" class="submit-button">✨ 합격 가능성 분석하기 ✨</button>
+            <div class="loading" id="loadingMessage">분석 중... 잠시만 기다려주세요.</div>
+        </form>
+
+        <div class="result-section" id="resultSection">
+            <h2>📊 분석 결과: 합격 가능성</h2>
+            <div class="fishbone-diagram">
+                <img id="fishboneTail" class="tail_bone" src="/static/tail_bone.png" alt="Fishbone Tail">
+                <div class="fishbone-head">직무: {{ job_title }}</div>
+                <div class="fishbone-prob" id="probabilityText">0%</div>
+            </div>
+            
+            <div class="feedback-box">
+                <div class="section-title">💡 AI 피드백</div>
+                <p id="feedbackContent"></p>
+            </div>
+            <p style="text-align: center; margin-top: 20px;"><a href="/" style="color: #007bff; text-decoration: none; font-weight: bold;">다른 직무 분석하러 가기</a></p>
+        </div>
+    </div>
+
+    <script>
+        document.getElementById('analysisForm').addEventListener('submit', async function(event) {
+            event.preventDefault(); // 폼 제출 기본 동작 방지
+
+            document.getElementById('loadingMessage').style.display = 'block';
+            document.getElementById('resultSection').style.display = 'none'; // 이전 결과 숨기기
+            document.getElementById('submitButton').disabled = true; // 버튼 비활성화
+
+            const jobSlug = "{{ job_slug }}"; // Jinja2 템플릿 변수 사용
+            const formData = new FormData();
+            
+            formData.append('resume_text', document.getElementById('resume_text').value);
+            const resumeFile = document.getElementById('resume_file').files[0];
+            if (resumeFile) {
+                formData.append('resume_file', resumeFile);
+            }
+
+            // 선택된 역량 체크박스 값 수집
+            const selectedCompetencies = Array.from(document.querySelectorAll('input[name="selected_competencies"]:checked')).map(cb => cb.value);
+            selectedCompetencies.forEach(comp => formData.append('selected_competencies', comp));
+
+            // 선택된 자격증 체크박스 값 수집
+            const selectedCertifications = Array.from(document.querySelectorAll('input[name="selected_certifications"]:checked')).map(cb => cb.value);
+            selectedCertifications.forEach(cert => formData.append('selected_certifications', cert));
+
+            // 기타 자격증 직접 입력 값 수집
+            const otherCertifications = document.getElementById('other_certifications').value.split(',').map(s => s.trim()).filter(s => s);
+            otherCertifications.forEach(cert => formData.append('selected_certifications', cert)); // 같은 필드명으로 추가
+
+            try {
+                const response = await fetch(`/api/analyze/${jobSlug}`, {
+                    method: 'POST',
+                    body: formData // FormData 객체를 body에 직접 넣으면 Content-Type이 자동으로 multipart/form-data로 설정됨
+                });
+
+                const result = await response.json();
+
+                if (response.ok) {
+                    document.getElementById('probabilityText').textContent = `${result.probability}%`;
+                    document.getElementById('feedbackContent').textContent = result.feedback;
+                    
+                    const fishboneTail = document.getElementById('fishboneTail');
+                    // 기존 클래스 제거 후 새 클래스 추가 (애니메이션을 위해)
+                    fishboneTail.className = ''; 
+                    fishboneTail.classList.add(result.tail_type);
+
+                    document.getElementById('resultSection').style.display = 'block'; // 결과 섹션 표시
+                } else {
+                    alert(`분석 실패: ${result.error || '알 수 없는 오류'}`);
+                }
+            } catch (error) {
+                console.error('Fetch error:', error);
+                alert('네트워크 오류 또는 서버 통신 실패');
+            } finally {
+                document.getElementById('loadingMessage').style.display = 'none';
+                document.getElementById('submitButton').disabled = false; // 버튼 다시 활성화
+            }
+        });
+    </script>
+</body>
+</html>
