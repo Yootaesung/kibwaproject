@@ -1,0 +1,359 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ job_title }} 채용 서류 에디터</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <div class="container">
+        <h1>✨ {{ job_title }} 채용 서류 맞춤 에디터 ✨</h1>
+        <p class="job-description">현재 직무: <strong>{{ job_title }}</strong></p>
+
+        <div id="document-diagram">
+            <div class="diagram-node job-node" data-doc-type="job">{{ job_title }}</div>
+            <div class="initial-documents">
+                <div class="diagram-node document-node" data-doc-type="resume" data-version="0">이력서</div>
+                <div class="diagram-node document-node" data-doc-type="cover_letter" data-version="0">자기소개서</div>
+                <div class="diagram-node document-node" data-doc-type="portfolio" data-version="0">포트폴리오</div>
+                <div class="diagram-node document-node" data-doc-type="career_statement" data-version="0">경력기술서</div>
+            </div>
+        </div>
+
+        <div id="edit-modal" class="modal">
+            <div class="modal-content">
+                <span class="close-button">&times;</span>
+                <h2 id="modal-title"></h2>
+                <div id="loading-overlay" class="loading-overlay" style="display: none;">
+                    <div class="spinner"></div>
+                    <p style="margin-top: 20px; font-weight: bold;">AI가 문서를 분석하고 있습니다. 잠시만 기다려 주세요...</p>
+                </div>
+                <form id="document-form">
+                    <div id="form-fields"></div>
+                    <div id="ai-feedback-area" style="margin-top: 20px; padding: 15px; background-color: #e6f7ff; border: 1px solid #91d5ff; border-radius: 5px; display: none;">
+                        <h3>💡 AI 피드백</h3>
+                        <p id="ai-feedback-content"></p>
+                    </div>
+                    <button type="submit">저장 및 분석</button>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // JavaScript for diagram drawing, modal control, and API calls
+        // 매우 복잡하므로 주요 로직만 설명합니다.
+
+        const jobTitle = "{{ job_title }}";
+        const documentDiagram = document.getElementById('document-diagram');
+        const editModal = document.getElementById('edit-modal');
+        const modalTitle = document.getElementById('modal-title');
+        const formFields = document.getElementById('form-fields');
+        const aiFeedbackArea = document.getElementById('ai-feedback-area');
+        const aiFeedbackContent = document.getElementById('ai-feedback-content');
+        const documentForm = document.getElementById('document-form');
+        let currentDocType = '';
+        let currentDocVersion = 0; // 각 문서 타입별 현재 활성 버전 (0은 초기 버전)
+        
+        // 각 문서 타입별 데이터 및 버전 관리를 위한 객체 (클라이언트 사이드 임시 저장)
+        const documentData = {
+            resume: [{ version: 0, content: {}, displayContent: "이력서 (초기)", koreanName: "이력서" }],
+            cover_letter: [{ version: 0, content: {}, displayContent: "자기소개서 (초기)", koreanName: "자기소개서" }],
+            portfolio: [{ version: 0, content: {}, displayContent: "포트폴리오 (초기)", koreanName: "포트폴리오" }],
+            career_statement: [{ version: 0, content: {}, displayContent: "경력기술서 (초기)", koreanName: "경력기술서" }]
+        };
+
+        // 다이아그램 그리기 함수 (초기 로드 및 업데이트 시 호출)
+        function drawDiagram() {
+            documentDiagram.innerHTML = `<div class="diagram-node job-node" data-doc-type="job">${jobTitle}</div>`;
+            const docsContainer = document.createElement('div');
+            docsContainer.className = 'initial-documents'; // 기존 CSS 클래스 재사용
+
+            Object.keys(documentData).forEach(docType => {
+                const docColumn = document.createElement('div');
+                docColumn.className = 'document-column'; // 각 문서 타입을 위한 수직 컨테이너
+
+                const versions = documentData[docType];
+                versions.forEach((versionData, index) => {
+                    const isLatest = index === versions.length - 1;
+                    // createDocumentNode에 한글 이름(versionData.koreanName)과 최신 버전 여부를 전달합니다.
+                    const docNode = createDocumentNode(docType, versionData.version, versionData.displayContent, versionData.koreanName, isLatest);
+                    docColumn.appendChild(docNode);
+                });
+
+                docsContainer.appendChild(docColumn);
+            });
+
+            documentDiagram.appendChild(docsContainer);
+            setupNodeClickEvents();
+        }
+
+        // 문서 노드 생성 함수
+        function createDocumentNode(type, version, displayText, koreanName, isLatest) {
+            const node = document.createElement('div');
+            node.className = 'diagram-node document-node';
+            node.dataset.docType = type;
+            node.dataset.version = version;
+
+            if (koreanName) {
+                node.dataset.koreanName = koreanName;
+            }
+
+            let content = `<span>${displayText}</span>`;
+            // 최신 버전이 아니면서, 버전 0(초기)이 아닌 노드에만 '되돌리기' 버튼 추가
+            if (!isLatest) {
+                 content += `<button class="rollback-button" data-doc-type="${type}" data-version="${version}">되돌리기</button>`;
+            }
+            node.innerHTML = content;
+            return node;
+        }
+
+        // 노드 클릭 이벤트 설정 (모달 열기)
+        function setupNodeClickEvents() {
+            // '되돌리기' 버튼 이벤트 리스너 설정
+            document.querySelectorAll('.rollback-button').forEach(button => {
+                button.onclick = (e) => {
+                    e.stopPropagation(); // 이벤트 버블링 방지
+                    const typeToRollback = e.target.dataset.docType;
+                    const versionToRollback = parseInt(e.target.dataset.version, 10);
+                    
+                    if (confirm(`${documentData[typeToRollback][0].koreanName} 문서를 버전 ${versionToRollback}으로 되돌리시겠습니까? 이 작업은 새 버전을 생성합니다.`)) {
+                        const newVersion = documentData[typeToRollback].length;
+                        const contentToRestore = documentData[typeToRollback].find(v => v.version === versionToRollback).content;
+                        const originalKoreanName = documentData[typeToRollback][0].koreanName;
+
+                        documentData[typeToRollback].push({
+                            version: newVersion,
+                            content: contentToRestore,
+                            displayContent: `${originalKoreanName} (v${newVersion} - 복원됨)`,
+                            koreanName: originalKoreanName
+                        });
+
+                        drawDiagram();
+                        alert('문서가 복원되었습니다.');
+                    }
+                };
+            });
+
+            document.querySelectorAll('.diagram-node.document-node').forEach(node => {
+                node.onclick = async (e) => {
+                    // 클릭된 노드의 문서 타입, 버전, 한글 이름 가져오기
+                    const clickedNode = e.target.closest('.document-node');
+                    currentDocType = clickedNode.dataset.docType;
+                    currentDocVersion = parseInt(clickedNode.dataset.version, 10);
+                    // 데이터 속성에 저장된 한글 이름을 일관되게 사용
+                    const currentDocTitle = clickedNode.dataset.koreanName;
+
+                    // 모달 제목 설정
+                    modalTitle.textContent = `${currentDocTitle} 편집`;
+
+                    // 해당 문서 타입과 버전에 맞는 내용 로드
+                    const docContent = documentData[currentDocType].find(d => d.version === currentDocVersion).content;
+                    
+                    // 직무별 문서 양식 불러오기 (백엔드 API 호출)
+                    const formSchema = await fetch(`/api/job_schema/${currentDocType}?job_slug=${jobTitle}`).then(res => res.json());
+                    renderFormFields(formSchema.fields, docContent);
+                    
+                    aiFeedbackArea.style.display = 'none'; // 피드백 영역 숨김
+                    editModal.style.display = 'block';
+                };
+            });
+
+            // 롤백 버튼 이벤트 설정
+            document.querySelectorAll('.rollback-button').forEach(button => {
+                button.onclick = (e) => {
+                    e.stopPropagation(); // 노드 클릭 이벤트 방지
+                    const typeToRollback = button.dataset.docType;
+                    const versionToRollback = parseInt(button.dataset.version);
+
+                    const targetData = documentData[typeToRollback].find(d => d.version === versionToRollback);
+                    if (targetData) {
+                        alert(`${targetData.koreanName}을(를) 버전 ${versionToRollback}으로 되돌립니다.`);
+                        
+                        currentDocType = typeToRollback;
+                        currentDocVersion = versionToRollback;
+                        
+                        // 한글 이름을 사용하여 모달 제목 설정
+                        const docTitle = documentData[typeToRollback][0].koreanName;
+                        modalTitle.textContent = `${docTitle} (버전 ${versionToRollback}) 내용 편집`;
+                        const docContent = documentData[typeToRollback].find(d => d.version === versionToRollback).content;
+                        
+                        fetch(`/api/job_schema/${currentDocType}?job_slug=${jobTitle}`)
+                            .then(res => res.json())
+                            .then(formSchema => renderFormFields(formSchema.fields, docContent));
+                        
+                        aiFeedbackArea.style.display = 'none';
+                        editModal.style.display = 'block';
+                    }
+                };
+            });
+        }
+
+        // 폼 필드 렌더링 함수
+        function renderFormFields(fields, currentContent) {
+            // 현재 문서의 한글 제목 가져오기
+            const currentDocTitle = document.querySelector(`.document-node[data-doc-type='${currentDocType}']`).dataset.koreanName;
+
+            formFields.innerHTML = '';
+            fields.forEach(field => {
+                const div = document.createElement('div');
+                div.className = 'input-group';
+                if (field.type === 'textarea') {
+                    div.innerHTML = `
+                        <label>${field.label}:</label>
+                        <textarea name="${field.name}" placeholder="${field.placeholder || ''}">${currentContent[field.name] || ''}</textarea>
+                    `;
+                } else if (field.type === 'text') {
+                    div.innerHTML = `
+                        <label>${field.label}:</label>
+                        <input type="text" name="${field.name}" value="${currentContent[field.name] || ''}" placeholder="${field.placeholder || ''}">
+                    `;
+                } else if (field.type === 'custom_qa') { // 자기소개서의 질문/답변 필드
+                    // 라벨을 동적으로 변경
+                    field.label = `${currentDocTitle} 질문과 답변`;
+                    div.innerHTML = `
+                        <label>${field.label}:</label>
+                        <div id="qa-container"></div>
+                        <button type="button" id="add-qa">질문/답변 추가</button>
+                    `;
+                    const qaContainer = div.querySelector('#qa-container');
+                    const addQaButton = div.querySelector('#add-qa');
+                    
+                    // 기존 Q&A 로드
+                    const qaPairs = currentContent[field.name] || [];
+                    qaPairs.forEach(qa => addQaField(qaContainer, qa.question, qa.answer));
+                    
+                    addQaButton.onclick = () => addQaField(qaContainer);
+                }
+                formFields.appendChild(div);
+            });
+        }
+
+        function addQaField(container, question = '', answer = '') {
+            const qaDiv = document.createElement('div');
+            qaDiv.className = 'qa-pair';
+            qaDiv.style.marginBottom = '10px';
+            qaDiv.innerHTML = `
+                <input type="text" class="qa-question" placeholder="질문 입력" value="${question}" style="width: calc(100% - 100px); margin-right: 5px;">
+                <textarea class="qa-answer" placeholder="답변 입력" style="width: 100%; min-height: 80px;">${answer}</textarea>
+                <button type="button" class="remove-qa" style="background-color: #dc3545; color: white; border: none; padding: 5px 10px; border-radius: 5px; cursor: pointer;">삭제</button>
+            `;
+            container.appendChild(qaDiv);
+            qaDiv.querySelector('.remove-qa').onclick = () => qaDiv.remove();
+        }
+
+        // 폼 제출 (저장 및 AI 분석 요청)
+        documentForm.onsubmit = async (e) => {
+            e.preventDefault();
+            const formData = new FormData(documentForm);
+            const docContent = {};
+            // 자기소개서 Q&A 처리
+            if (currentDocType === 'cover_letter') {
+                const qaPairs = [];
+                document.querySelectorAll('.qa-pair').forEach(qaDiv => {
+                    const question = qaDiv.querySelector('.qa-question').value;
+                    const answer = qaDiv.querySelector('.qa-answer').value;
+                    if (question && answer) {
+                        qaPairs.push({ question, answer });
+                    }
+                });
+                docContent['qa'] = qaPairs; // 'qa' 필드에 배열 저장
+            }
+            // 일반 필드 처리
+            for (let [key, value] of formData.entries()) {
+                if (key !== 'qa') { // qa 필드는 위에서 이미 처리했으므로 제외
+                     docContent[key] = value;
+                }
+            }
+
+            // 내용 유효성 검사
+            let isEmpty = false;
+            if (currentDocType === 'cover_letter') {
+                // 'qa' 배열이 없거나 비어있는지 확인
+                if (!docContent.qa || docContent.qa.length === 0) {
+                    isEmpty = true;
+                }
+            } else if (currentDocType === 'resume') {
+                // 모든 필드가 비어있는지 확인
+                if (Object.keys(docContent).length === 0 || Object.values(docContent).every(v => typeof v === 'string' && v.trim() === '')) {
+                    isEmpty = true;
+                }
+            }
+
+            if (isEmpty) {
+                alert('분석할 내용이 없습니다. 내용을 입력해주세요.');
+                return; // 분석 중단
+            }
+
+            // AI 분석 요청
+            try {
+                // 백엔드 API로 문서 내용과 타입 전송 (FormData 사용)
+                const analysisFormData = new FormData();
+                analysisFormData.append('job_title', jobTitle);
+                analysisFormData.append('document_content', JSON.stringify(docContent)); // 객체를 JSON 문자열로 변환
+                analysisFormData.append('current_version', currentDocVersion);
+
+                const loadingOverlay = document.getElementById('loading-overlay');
+                const formElements = document.getElementById('form-fields');
+
+                loadingOverlay.style.display = 'flex';
+                formElements.style.display = 'none'; // Hide form fields
+
+                const response = await fetch(`/api/analyze_document/${currentDocType}`, {
+                    method: 'POST',
+                    // FormData를 사용할 때는 Content-Type 헤더를 브라우저가 자동으로 설정하도록 둡니다.
+                    body: analysisFormData
+                });
+                const result = await response.json();
+
+                loadingOverlay.style.display = 'none';
+                formElements.style.display = 'block'; // Show form fields
+
+                if (response.ok) {
+                    aiFeedbackContent.textContent = result.feedback;
+                    aiFeedbackArea.style.display = 'block';
+
+                    // 새로운 버전으로 데이터 업데이트 및 다이어그램 확장
+                    const newVersion = documentData[currentDocType].length; // 현재 버전 다음 번호
+                    const originalKoreanName = documentData[currentDocType][0].koreanName; // 원본 한글 이름 가져오기
+                    documentData[currentDocType].push({
+                        version: newVersion,
+                        content: docContent, // 저장된 내용
+                        displayContent: `${originalKoreanName} (v${newVersion})`, // 한글 이름 유지
+                        koreanName: originalKoreanName
+                    });
+                    currentDocVersion = newVersion; // 현재 활성 버전 업데이트
+                    drawDiagram(); // 다이어그램 다시 그리기
+                    alert('문서가 저장되고 분석되었습니다. AI 피드백을 확인하세요.');
+                    // editModal.style.display = 'none'; // 모달 닫기
+                } else {
+                    alert(`분석 실패: ${result.error || '알 수 없는 오류'}`);
+                }
+            } catch (error) {
+                console.error('API 통신 오류:', error);
+                alert('서버와 통신 중 오류가 발생했습니다.');
+                const loadingOverlay = document.getElementById('loading-overlay');
+                const formElements = document.getElementById('form-fields');
+
+                loadingOverlay.style.display = 'none';
+                formElements.style.display = 'block'; // Show form fields
+            }
+        };
+
+        // 모달 닫기 버튼
+        document.querySelector('.close-button').onclick = () => {
+            editModal.style.display = 'none';
+        };
+        // 모달 바깥 클릭 시 닫기
+        window.onclick = (event) => {
+            if (event.target == editModal) {
+                editModal.style.display = 'none';
+            }
+        };
+
+        // 초기 다이아그램 그리기
+        drawDiagram();
+    </script>
+</body>
+</html>

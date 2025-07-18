@@ -44,7 +44,7 @@
                 <div class="job-list">
                     {% for job_title in jobs %}
                         {% set job_slug = job_title.replace(" ", "-").replace("/", "-").lower() %}
-                        <a href="/analysis/{{ job_slug }}" class="job-button">
+                        <a href="/editor/{{ job_slug }}" class="job-button">
                             {{ job_title }}
                         </a>
                     {% endfor %}
