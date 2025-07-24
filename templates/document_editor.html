@@ -17,7 +17,6 @@
                 <div class="diagram-node document-node" data-doc-type="resume" data-version="0">이력서</div>
                 <div class="diagram-node document-node" data-doc-type="cover_letter" data-version="0">자기소개서</div>
                 <div class="diagram-node document-node" data-doc-type="portfolio" data-version="0">포트폴리오</div>
-                <div class="diagram-node document-node" data-doc-type="career_statement" data-version="0">경력기술서</div>
             </div>
         </div>
 
@@ -58,10 +57,9 @@
         
         // 각 문서 타입별 데이터 및 버전 관리를 위한 객체 (클라이언트 사이드 임시 저장)
         const documentData = {
-            resume: [{ version: 0, content: {}, displayContent: "이력서 (초기)", koreanName: "이력서" }],
-            cover_letter: [{ version: 0, content: {}, displayContent: "자기소개서 (초기)", koreanName: "자기소개서" }],
-            portfolio: [{ version: 0, content: {}, displayContent: "포트폴리오 (초기)", koreanName: "포트폴리오" }],
-            career_statement: [{ version: 0, content: {}, displayContent: "경력기술서 (초기)", koreanName: "경력기술서" }]
+            resume: [{ version: 0, content: {}, displayContent: "이력서 (초기)", koreanName: "이력서", feedback: null }],
+            cover_letter: [{ version: 0, content: {}, displayContent: "자기소개서 (초기)", koreanName: "자기소개서", feedback: null }],
+            portfolio: [{ version: 0, content: {}, displayContent: "포트폴리오 (초기)", koreanName: "포트폴리오", feedback: null }]
         };
 
         // 다이아그램 그리기 함수 (초기 로드 및 업데이트 시 호출)
@@ -103,7 +101,7 @@
             let content = `<span>${displayText}</span>`;
             // 최신 버전이 아니면서, 버전 0(초기)이 아닌 노드에만 '되돌리기' 버튼 추가
             if (!isLatest) {
-                 content += `<button class="rollback-button" data-doc-type="${type}" data-version="${version}">되돌리기</button>`;
+                    content += `<button class="rollback-button" data-doc-type="${type}" data-version="${version}">되돌리기</button>`;
             }
             node.innerHTML = content;
             return node;
@@ -145,17 +143,26 @@
                     // 데이터 속성에 저장된 한글 이름을 일관되게 사용
                     const currentDocTitle = clickedNode.dataset.koreanName;
 
-                    // 모달 제목 설정
-                    modalTitle.textContent = `${currentDocTitle} 편집`;
+                    // 모달 제목 설정 (버전 정보 포함)
+                    modalTitle.textContent = `${currentDocTitle} 편집 (v${currentDocVersion})`;
 
-                    // 해당 문서 타입과 버전에 맞는 내용 로드
-                    const docContent = documentData[currentDocType].find(d => d.version === currentDocVersion).content;
+                    // 해당 문서 타입과 버전에 맞는 내용과 피드백 로드
+                    const versionData = documentData[currentDocType].find(d => d.version === currentDocVersion);
+                    const docContent = versionData.content;
+                    const savedFeedback = versionData.feedback;
                     
                     // 직무별 문서 양식 불러오기 (백엔드 API 호출)
-                    const formSchema = await fetch(`/api/job_schema/${currentDocType}?job_slug=${jobTitle}`).then(res => res.json());
+                    const formSchema = await fetch(`/api/job_schema/${currentDocType}?job_slug=${jobTitle.replace(/ /g, '-').toLowerCase()}`).then(res => res.json());
                     renderFormFields(formSchema.fields, docContent);
                     
-                    aiFeedbackArea.style.display = 'none'; // 피드백 영역 숨김
+                    // 저장된 피드백이 있으면 보여주고, 없으면 숨김
+                    if (savedFeedback) {
+                        aiFeedbackContent.textContent = savedFeedback;
+                        aiFeedbackArea.style.display = 'block';
+                    } else {
+                        aiFeedbackArea.style.display = 'none';
+                    }
+                    
                     editModal.style.display = 'block';
                 };
             });
@@ -192,10 +199,107 @@
 
         // 폼 필드 렌더링 함수
         function renderFormFields(fields, currentContent) {
-            // 현재 문서의 한글 제목 가져오기
             const currentDocTitle = document.querySelector(`.document-node[data-doc-type='${currentDocType}']`).dataset.koreanName;
-
             formFields.innerHTML = '';
+            if (currentDocType === 'portfolio') {
+                // 포트폴리오 요약 전용 UI
+                formFields.innerHTML = `
+                    <div class="input-group">
+                        <label>포트폴리오 PDF 업로드:</label>
+                        <input type="file" name="portfolio_pdf" accept=".pdf">
+                    </div>
+                    <div class="input-group">
+                        <label>포트폴리오 링크 입력:</label>
+                        <input type="text" name="portfolio_link" placeholder="포트폴리오가 업로드된 웹사이트, 블로그, Github 등 링크를 입력하세요.">
+                    </div>
+                `;
+                // '요약 및 다운' 버튼을 모달 하단에 표시
+                const submitBtn = document.querySelector('#document-form button[type="submit"]');
+                submitBtn.textContent = '요약 및 다운';
+                // 기존 submit 이벤트 제거 후 새로 등록
+                documentForm.onsubmit = async (e) => {
+                    e.preventDefault();
+                    const pdfInput = document.querySelector('input[name="portfolio_pdf"]');
+                    const linkInput = document.querySelector('input[name="portfolio_link"]');
+                    const formData = new FormData();
+                    formData.append('job_title', jobTitle);
+                    if (pdfInput.files.length > 0) {
+                        formData.append('portfolio_pdf', pdfInput.files[0]);
+                    }
+                    if (linkInput.value.trim()) {
+                        formData.append('portfolio_link', linkInput.value.trim());
+                    }
+                    if (formData.has('portfolio_pdf') || formData.get('portfolio_link')) {
+                        const loadingOverlay = document.getElementById('loading-overlay');
+                        loadingOverlay.style.display = 'flex';
+                        try {
+                            const response = await fetch('/api/portfolio_summary', {
+                                method: 'POST',
+                                body: formData
+                            });
+                            loadingOverlay.style.display = 'none';
+                            if (response.ok) {
+                                const blob = await response.blob();
+                                const url = window.URL.createObjectURL(blob);
+                                const a = document.createElement('a');
+                                a.href = url;
+                                a.download = 'portfolio_summary.pdf';
+                                document.body.appendChild(a);
+                                a.click();
+                                a.remove();
+                                window.URL.revokeObjectURL(url);
+                                alert('요약 PDF가 다운로드되었습니다.');
+                            } else {
+                                const result = await response.json();
+                                alert(result.error || '요약 실패');
+                            }
+                        } catch (err) {
+                            loadingOverlay.style.display = 'none';
+                            alert('서버 오류: ' + err);
+                        }
+                    } else {
+                        alert('PDF 파일을 업로드하거나 링크를 입력하세요.');
+                    }
+                };
+                return;
+            }
+            // --- 자기소개서 고정 질문 및 글자수 카운터 추가 시작 ---
+            else if (currentDocType === 'cover_letter') {
+                const qaContainer = document.createElement('div');
+                qaContainer.id = 'qa-container';
+                qaContainer.innerHTML = `
+                    <div class="input-group">
+                        <label>1. 해당 직무의 지원동기와 전문성을 기르기 위해 노력한 경험을 서술하시오.</label>
+                        <textarea name="motivation_expertise" placeholder="내용을 입력하세요." style="width: 100%; min-height: 120px;">${currentContent.motivation_expertise || ''}</textarea>
+                        <div class="char-counter" style="text-align: right; font-size: 0.9em; color: #666; margin-top: 3px;">
+                            글자수: <span class="char-count">${(currentContent.motivation_expertise || '').length}</span>
+                        </div>
+                    </div>
+                    <div class="input-group" style="margin-top: 20px;">
+                        <label>2. 공동의 목표를 위해 협업을 한 경험을 서술하시오.</label>
+                        <textarea name="collaboration_experience" placeholder="내용을 입력하세요." style="width: 100%; min-height: 120px;">${currentContent.collaboration_experience || ''}</textarea>
+                        <div class="char-counter" style="text-align: right; font-size: 0.9em; color: #666; margin-top: 3px;">
+                            글자수: <span class="char-count">${(currentContent.collaboration_experience || '').length}</span>
+                        </div>
+                    </div>
+                `;
+                formFields.appendChild(qaContainer);
+
+                // 각 textarea에 글자 수 카운터 이벤트 리스너 추가
+                qaContainer.querySelectorAll('textarea').forEach(textarea => {
+                    const charCountSpan = textarea.nextElementSibling.querySelector('.char-count');
+                    textarea.addEventListener('input', () => {
+                        charCountSpan.textContent = textarea.value.length;
+                    });
+                });
+                // 자기소개서는 "저장 및 분석" 버튼 기능을 유지합니다.
+                const submitBtn = document.querySelector('#document-form button[type="submit"]');
+                submitBtn.textContent = '저장 및 분석';
+                // 기존 submit 이벤트 리스너가 다시 연결되도록 함 (renderFormFields 밖에서 처리)
+                documentForm.onsubmit = handleDocumentFormSubmit; // 아래에 별도 함수로 분리
+                return;
+            }
+            // --- 자기소개서 고정 질문 및 글자수 카운터 추가 끝 ---
             fields.forEach(field => {
                 const div = document.createElement('div');
                 div.className = 'input-group';
@@ -209,73 +313,45 @@
                         <label>${field.label}:</label>
                         <input type="text" name="${field.name}" value="${currentContent[field.name] || ''}" placeholder="${field.placeholder || ''}">
                     `;
-                } else if (field.type === 'custom_qa') { // 자기소개서의 질문/답변 필드
-                    // 라벨을 동적으로 변경
-                    field.label = `${currentDocTitle} 질문과 답변`;
-                    div.innerHTML = `
-                        <label>${field.label}:</label>
-                        <div id="qa-container"></div>
-                        <button type="button" id="add-qa">질문/답변 추가</button>
-                    `;
-                    const qaContainer = div.querySelector('#qa-container');
-                    const addQaButton = div.querySelector('#add-qa');
-                    
-                    // 기존 Q&A 로드
-                    const qaPairs = currentContent[field.name] || [];
-                    qaPairs.forEach(qa => addQaField(qaContainer, qa.question, qa.answer));
-                    
-                    addQaButton.onclick = () => addQaField(qaContainer);
+                } else if (field.type === 'custom_qa') { // 자기소개서의 질문/답변 필드 (이제 사용되지 않음)
+                    // 이 부분은 더 이상 사용되지 않습니다.
                 }
                 formFields.appendChild(div);
             });
+            // 자기소개서가 아닌 다른 문서 타입은 "저장 및 분석" 버튼 기능을 유지합니다.
+            const submitBtn = document.querySelector('#document-form button[type="submit"]');
+            submitBtn.textContent = '저장 및 분석';
+            documentForm.onsubmit = handleDocumentFormSubmit; // 아래에 별도 함수로 분리
         }
 
-        function addQaField(container, question = '', answer = '') {
-            const qaDiv = document.createElement('div');
-            qaDiv.className = 'qa-pair';
-            qaDiv.style.marginBottom = '10px';
-            qaDiv.innerHTML = `
-                <input type="text" class="qa-question" placeholder="질문 입력" value="${question}" style="width: calc(100% - 100px); margin-right: 5px;">
-                <textarea class="qa-answer" placeholder="답변 입력" style="width: 100%; min-height: 80px;">${answer}</textarea>
-                <button type="button" class="remove-qa" style="background-color: #dc3545; color: white; border: none; padding: 5px 10px; border-radius: 5px; cursor: pointer;">삭제</button>
-            `;
-            container.appendChild(qaDiv);
-            qaDiv.querySelector('.remove-qa').onclick = () => qaDiv.remove();
-        }
+        // 자기소개서 글자수 카운터 기능을 위한 도우미 함수 (이제 사용되지 않음)
+        // function addQaField(container, question = '', answer = '') { ... }
 
-        // 폼 제출 (저장 및 AI 분석 요청)
-        documentForm.onsubmit = async (e) => {
+        // 폼 제출 (저장 및 AI 분석 요청) 로직을 별도 함수로 분리
+        const handleDocumentFormSubmit = async (e) => {
             e.preventDefault();
             const formData = new FormData(documentForm);
             const docContent = {};
-            // 자기소개서 Q&A 처리
+            
+            // 자기소개서 고정 질문 처리
             if (currentDocType === 'cover_letter') {
-                const qaPairs = [];
-                document.querySelectorAll('.qa-pair').forEach(qaDiv => {
-                    const question = qaDiv.querySelector('.qa-question').value;
-                    const answer = qaDiv.querySelector('.qa-answer').value;
-                    if (question && answer) {
-                        qaPairs.push({ question, answer });
-                    }
-                });
-                docContent['qa'] = qaPairs; // 'qa' 필드에 배열 저장
-            }
-            // 일반 필드 처리
-            for (let [key, value] of formData.entries()) {
-                if (key !== 'qa') { // qa 필드는 위에서 이미 처리했으므로 제외
-                     docContent[key] = value;
+                docContent['motivation_expertise'] = formData.get('motivation_expertise') || '';
+                docContent['collaboration_experience'] = formData.get('collaboration_experience') || '';
+            } 
+            // 일반 필드 처리 (자기소개서가 아닌 경우)
+            else { 
+                for (let [key, value] of formData.entries()) {
+                    docContent[key] = value;
                 }
             }
 
-            // 내용 유효성 검사
+            // 내용 유효성 검사 (자기소개서 고정 질문에 맞게 수정)
             let isEmpty = false;
             if (currentDocType === 'cover_letter') {
-                // 'qa' 배열이 없거나 비어있는지 확인
-                if (!docContent.qa || docContent.qa.length === 0) {
+                if (!docContent['motivation_expertise'].trim() && !docContent['collaboration_experience'].trim()) {
                     isEmpty = true;
                 }
-            } else if (currentDocType === 'resume') {
-                // 모든 필드가 비어있는지 확인
+            } else { // resume, career_statement 등 기존 문서 타입
                 if (Object.keys(docContent).length === 0 || Object.values(docContent).every(v => typeof v === 'string' && v.trim() === '')) {
                     isEmpty = true;
                 }
@@ -314,19 +390,25 @@
                     aiFeedbackContent.textContent = result.feedback;
                     aiFeedbackArea.style.display = 'block';
 
-                    // 새로운 버전으로 데이터 업데이트 및 다이어그램 확장
-                    const newVersion = documentData[currentDocType].length; // 현재 버전 다음 번호
-                    const originalKoreanName = documentData[currentDocType][0].koreanName; // 원본 한글 이름 가져오기
+                    // 1. Update the content of the currently edited version.
+                    const versionToUpdate = documentData[currentDocType].find(d => d.version === currentDocVersion);
+                    if (versionToUpdate) {
+                        versionToUpdate.content = docContent;
+                    }
+
+                    // 2. Create a new version with the updated content.
+                    const newVersion = documentData[currentDocType].length;
+                    const originalKoreanName = documentData[currentDocType][0].koreanName;
                     documentData[currentDocType].push({
                         version: newVersion,
-                        content: docContent, // 저장된 내용
-                        displayContent: `${originalKoreanName} (v${newVersion})`, // 한글 이름 유지
-                        koreanName: originalKoreanName
+                        content: docContent,
+                        displayContent: `${originalKoreanName} (v${newVersion})`,
+                        koreanName: originalKoreanName,
+                        feedback: result.feedback // Store the feedback with the new version
                     });
-                    currentDocVersion = newVersion; // 현재 활성 버전 업데이트
-                    drawDiagram(); // 다이어그램 다시 그리기
+                    currentDocVersion = newVersion;
+                    drawDiagram();
                     alert('문서가 저장되고 분석되었습니다. AI 피드백을 확인하세요.');
-                    // editModal.style.display = 'none'; // 모달 닫기
                 } else {
                     alert(`분석 실패: ${result.error || '알 수 없는 오류'}`);
                 }
@@ -340,6 +422,10 @@
                 formElements.style.display = 'block'; // Show form fields
             }
         };
+
+        // 초기 폼 제출 이벤트 리스너 설정
+        documentForm.onsubmit = handleDocumentFormSubmit;
+
 
         // 모달 닫기 버튼
         document.querySelector('.close-button').onclick = () => {

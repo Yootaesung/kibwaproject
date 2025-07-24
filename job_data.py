@@ -2,107 +2,121 @@
 from typing import Optional, Dict, Any
 
 JOB_CATEGORIES = {
-    "개발": [
-        "프론트엔드 개발자", "백엔드 개발자", "앱 개발자", "AI/데이터 개발자", "DevOps/인프라 엔지니어"
+    "제조/생산": [
+        "생산직",
+        "품질보증",
+        "생산관리자",
+        "설비 유지보수 엔지니어"
     ],
     "마케팅/광고": [
-        "디지털 마케터", "콘텐츠 마케터", "퍼포먼스 마케터", "마케팅 기획자"
+        "디지털 마케터",
+        "콘텐츠 마케터",
+        "퍼포먼스 마케터",
+        "마케팅 기획자"
     ],
     "경영/비즈니스": [
-        "사업기획자", "프로덕트 매니저(PM)", "재무/회계 담당자", "HR 담당자", "영업기획/BD"
+        "재무/회계",
+        "프로덕트 매니저",
+        "사업기획자",
+        "HR 담당자"
     ],
-    "디자인": [
-        "UX/UI 디자이너", "그래픽 디자이너", "브랜드 디자이너", "모션/영상 디자이너"
-    ],
-    "영업": [
-        "B2B 영업", "B2C 영업", "기술영업", "영업기획/관리"
-    ],
-    "엔지니어링/설계": [
-        "기계 설계 엔지니어", "전기/전자 설계 엔지니어", "제품 개발 엔지니어", "품질관리(QA/QC)"
-    ],
-    "제조/생산": [
-        "생산직 오퍼레이터", "생산관리자", "품질관리자", "설비 유지보수 엔지니어"
-    ],
-    "의료/제약/바이오": [
-        "의사", "간호사", "약사", "임상시험 코디네이터(CRA)", "바이오 연구원"
-    ],
-    "금융": [
-        "은행원", "자산운용 매니저", "금융 컨설턴트(FP)", "투자 분석가"
-    ],
-    "미디어": [
-        "방송 PD", "콘텐츠 작가", "영상 편집자", "유튜브 콘텐츠 기획자"
-    ],
-    "게임 제작": [
-        "게임 기획자", "게임 프로그래머", "게임 아티스트", "게임 QA/테스터"
-    ],
-    "물류/무역": [
-        "물류 관리자", "수출입 담당자", "구매 담당자", "통관사"
-    ],
-    "법률/법기관": [
-        "변호사", "검사", "수사관", "기업 법무 담당자"
-    ],
-    "건설/시설": [
-        "건축가", "시공 관리자(현장소장)", "전기/소방 기술자", "인테리어 디자이너"
-    ],
-    "식음료": [
-        "조리사(셰프)", "바리스타", "제과제빵사", "식품 품질관리자"
-    ],
-    "공공/복지": [
-        "사회복지사", "공무원", "요양보호사", "NGO 활동가"
-    ],
-    "정보보호": [
-        "보안 엔지니어", "보안 관제 요원(SOC)", "개인정보보호 담당자(DPO)", "사이버 위협 분석가"
+    "개발": [
+        "백엔드 개발자",
+        "프론트엔드 개발자",
+        "AI/데이터 개발자",
+        "DevOps/인프라 개발자"
     ]
 }
 
-# 각 직무별 필수 역량 및 자격증 데이터 (이 부분을 추가해야 합니다)
-# 실제 데이터는 더 상세하게 채워야 합니다.
+# 각 직무별 필수 역량 및 자격증 데이터
 JOB_DETAILS = {
+    # 개발
     "프론트엔드 개발자": {
         "competencies": ["HTML/CSS", "JavaScript", "React", "Vue.js", "TypeScript", "Redux", "Webpack/Vite", "반응형 웹", "UI/UX 이해", "API 연동", "Git/GitHub"],
-        "certifications": ["정보처리기사", "웹디자인기능사"], # 예시
+        "certifications": ["정보처리기사", "웹디자인기능사", "정보보안기사"], # 정보보안기사 추가 (웹 보안 중요성 증가)
         "description": "웹사이트의 사용자 인터페이스(UI)를 구축하고 사용자 경험(UX)을 개선하는 역할입니다."
     },
     "백엔드 개발자": {
         "competencies": ["Python", "Java", "Node.js", "Spring Framework", "Django/Flask", "RESTful API", "RDBMS (SQL)", "NoSQL", "Docker", "AWS/GCP/Azure"],
-        "certifications": ["정보처리기사", "OCJP (Oracle Certified Java Programmer)"], # 예시
+        "certifications": ["정보처리기사", "OCJP (Oracle Certified Java Programmer)", "SQLD/SQLP (국가공인 데이터베이스 자격증)", "정보보안기사"], # SQL 자격증, 정보보안기사 추가
         "description": "서버, 데이터베이스 및 애플리케이션의 핵심 로직을 담당합니다."
-    },
-    "UX/UI 디자이너": {
-        "competencies": ["Figma/Sketch/Adobe XD", "Photoshop/Illustrator", "사용자 리서치", "와이어프레임/프로토타이핑", "정보 설계", "디자인 시스템"],
-        "certifications": ["컴퓨터그래픽스운용기능사", "웹디자인기능사"], # 예시
-        "description": "사용자 경험(UX)을 설계하고 사용자 인터페이스(UI)를 디자인합니다."
-    },
-    # --- 중요: 여기에 다른 모든 직무에 대한 JOB_DETAILS를 추가해야 합니다. ---
-    # 각 직무에 맞는 실제 역량과 자격증 데이터를 채워주세요.
-    # 예시:
-    "앱 개발자": {
-        "competencies": ["Kotlin/Swift", "Android/iOS SDK", "UI/UX 원칙", "RESTful API 연동", "SQLite/Realm", "Firebase"],
-        "certifications": ["정보처리기사"],
-        "description": "모바일 애플리케이션을 개발하고 유지보수합니다."
     },
     "AI/데이터 개발자": {
         "competencies": ["Python", "R", "머신러닝 알고리즘", "딥러닝 프레임워크 (TensorFlow/PyTorch)", "데이터 전처리/분석", "SQL", "빅데이터 기술 (Spark/Hadoop)"],
-        "certifications": ["정보처리기사", "빅데이터분석기사"],
+        "certifications": ["정보처리기사", "빅데이터분석기사", "ADsP/ADP (데이터 분석 전문가/준전문가)", "SQLD/SQLP (국가공인 데이터베이스 자격증)"], # 데이터 분석/SQL 자격증 추가
         "description": "인공지능 모델을 개발하고 데이터를 분석하여 비즈니스 통찰력을 제공합니다."
     },
-    "DevOps/인프라 엔지니어": {
+    "DevOps/인프라 개발자": {
         "competencies": ["Linux/Unix", "클라우드 (AWS/Azure/GCP)", "Docker", "Kubernetes", "CI/CD (Jenkins/GitLab CI)", "스크립팅 (Bash/Python)", "네트워킹", "보안"],
-        "certifications": ["리눅스마스터", "클라우드 자격증 (AWS SAA)"],
+        "certifications": ["리눅스마스터", "클라우드 자격증 (AWS SAA)", "정보보안기사", "네트워크관리사"], # 정보보안기사, 네트워크관리사 추가
         "description": "소프트웨어 개발 및 배포 파이프라인을 구축하고 인프라를 관리합니다."
     },
-    # 마케팅/광고 직무 예시
+
+    # 마케팅/광고
     "디지털 마케터": {
         "competencies": ["SEO/SEM", "SNS 마케팅", "콘텐츠 기획", "데이터 분석 (Google Analytics)", "광고 집행 (GDN/GA)", "이메일 마케팅", "CRM"],
-        "certifications": ["구글 애널리틱스 자격증", "검색광고마케터"],
+        "certifications": ["구글 애널리틱스 자격증", "검색광고마케터", "사회조사분석사"], # 사회조사분석사 추가 (시장 및 소비자 분석 역량)
         "description": "온라인 채널을 활용하여 제품/서비스를 홍보하고 고객을 유치합니다."
     },
+    "콘텐츠 마케터": {
+        "competencies": ["콘텐츠 기획/제작", "카피라이팅", "SEO", "SNS 채널 운영"],
+        "certifications": ["GTQ 포토샵/일러스트", "컴퓨터그래픽스운용기능사"], # 시각 콘텐츠 제작 능력 증명 자격증 추가
+        "description": "고객에게 가치있는 콘텐츠를 제작하고 배포하여 브랜드 인지도를 높입니다."
+    },
+    "퍼포먼스 마케터": {
+        "competencies": ["데이터 분석", "A/B 테스트", "광고 최적화", "ROAS 분석"],
+        "certifications": ["구글 애널리틱스 자격증", "검색광고마케터", "사회조사분석사", "SQLD/SQLP (데이터 분석 관련)"], # 데이터 관련 자격증 추가
+        "description": "데이터 기반으로 광고 성과를 측정하고 최적화하여 마케팅 효율을 극대화합니다."
+    },
+    "마케팅 기획자": {
+        "competencies": ["시장 조사", "경쟁사 분석", "마케팅 전략 수립", "예산 관리"],
+        "certifications": ["사회조사분석사", "마케팅관리사"], # 사회조사분석사, 마케팅관리사 추가
+        "description": "전반적인 마케팅 전략을 수립하고 실행 계획을 관리합니다."
+    },
+    
+    # 경영/비즈니스
     "사업기획자": {
         "competencies": ["시장 분석", "사업 모델 수립", "재무 분석", "전략 기획", "PPT/보고서 작성", "커뮤니케이션", "협상력"],
-        "certifications": ["경영지도사"],
+        "certifications": ["경영지도사", "재경관리사", "투자자산운용사"], # 재무/투자 관련 자격증 추가
         "description": "새로운 사업 기회를 발굴하고 실행 전략을 수립합니다."
     },
-    # ... 기타 직무들도 유사한 방식으로 추가해야 합니다.
+    "재무/회계": {
+        "competencies": ["재무제표 분석", "세무", "예산 관리", "자금 운용"],
+        "certifications": ["재경관리사", "전산회계", "세무회계", "공인회계사(CPA) (최상위)", "세무사 (최상위)"], # 세무회계, CPA, 세무사 추가
+        "description": "회사의 재무 상태를 관리하고 회계 기준에 따라 업무를 처리합니다."
+    },
+    "프로덕트 매니저": {
+        "competencies": ["제품 로드맵", "사용자 스토리 작성", "데이터 분석", "UX 리서치"],
+        "certifications": ["PMP (Project Management Professional)", "SQLD/SQLP (데이터 분석 관련)"], # 프로젝트 관리, 데이터 분석 자격증 추가
+        "description": "제품의 전체 생명주기를 관리하며 성공적인 제품 출시를 책임집니다."
+    },
+    "HR 담당자": {
+        "competencies": ["채용", "인사평가", "보상", "노무"],
+        "certifications": ["공인노무사", "HRD 전문가", "사회조사분석사"], # HRD, 사회조사분석사 추가 (직무 분석 및 통계 능력)
+        "description": "회사의 인적 자원을 관리하고 개발하는 업무를 담당합니다."
+    },
+    
+    # 제조/생산
+    "생산직": {
+        "competencies": ["장비 조작", "품질 검사", "안전 수칙 준수"],
+        "certifications": ["생산자동화산업기사", "위험물산업기사", "지게차운전기능사"], # 생산 자동화, 위험물, 지게차 자격증 추가 (실질적 현장 능력)
+        "description": "생산 라인에서 제품을 직접 제조하고 조립하는 역할을 담당합니다."
+    },
+    "품질보증": {
+        "competencies": ["품질 시스템(ISO)", "통계적 품질 관리(SQC)", "고객 클레임 대응"],
+        "certifications": ["품질경영기사", "6시그마 자격증 (GB/BB)"], # 6시그마 자격증 추가 (공정 개선 능력)
+        "description": "제품이 일정한 품질 표준을 충족하도록 보증하고 관리합니다."
+    },
+    "생산관리자": {
+        "competencies": ["생산 계획 수립", "공정 관리", "원가 관리", "재고 관리"],
+        "certifications": ["생산성경영체계(PMS) 컨설턴트", "물류관리사"], # 생산성 경영, 물류 관리 자격증 추가
+        "description": "생산 활동이 효율적으로 이루어지도록 계획하고 관리합니다."
+    },
+    "설비 유지보수 엔지니어": {
+        "competencies": ["기계/전기 설비 이해", "예방 보전", "고장 수리"],
+        "certifications": ["기계정비산업기사", "전기기사/산업기사", "공조냉동기계기사/산업기사"], # 전기, 공조냉동 자격증 추가 (종합적인 설비 관리 능력)
+        "description": "생산 설비가 안정적으로 가동되도록 점검, 수리, 보전 업무를 수행합니다."
+    }
 }
 
 # 각 직무별 문서 양식 (입력 필드 정의)
@@ -119,23 +133,14 @@ JOB_DOCUMENT_SCHEMAS = {
     },
     "cover_letter": {
         "fields": [
-            {"name": "qa", "label": "자기소개서 질문과 답변", "type": "custom_qa", "placeholder": "자유롭게 질문과 답변 항목을 추가하세요."}
-            # Custom Q&A type will be handled specially by JS in document_editor.html
+            {"name": "motivation_expertise", "label": "해당 직무의 지원동기와 전문성을 기르기 위해 노력한 경험", "type": "textarea", "placeholder": "내용을 입력하세요."},
+            {"name": "collaboration_experience", "label": "공동의 목표를 위해 협업을 한 경험", "type": "textarea", "placeholder": "내용을 입력하세요."}
         ]
     },
     "portfolio": {
         "fields": [
-            {"name": "project_name", "label": "대표 프로젝트명", "type": "text", "placeholder": "포트폴리오의 대표적인 프로젝트 이름을 입력하세요. (예: 스마트 도시 데이터 분석 시스템 개발)"},
-            {"name": "project_details", "label": "프로젝트 상세", "type": "textarea", "placeholder": "각 프로젝트의 목표, 역할, 사용 기술 스택, 개발 과정, 기여도 및 핵심 성과를 상세히 설명하세요. 수치화된 성과가 있다면 좋습니다."},
-            {"name": "project_links", "label": "관련 링크", "type": "text", "placeholder": "Github, 개인 블로그, 데모 영상 등 프로젝트 관련 링크를 쉼표(,)로 구분하여 입력하세요."}
-        ]
-    },
-    "career_statement": {
-        "fields": [
-            {"name": "company_name", "label": "회사명", "type": "text", "placeholder": "근무했던 회사 이름을 입력하세요. (예: (주)ABC 테크놀로지)"},
-            {"name": "employment_period", "label": "근무 기간", "type": "text", "placeholder": "근무 시작일과 종료일을 입력하세요. (예: 2020.03 ~ 2023.08)"},
-            {"name": "role", "label": "담당 직무 및 역할", "type": "text", "placeholder": "회사 내에서 담당했던 직무명과 구체적인 역할을 입력하세요. (예: 백엔드 개발팀 / API 개발 및 유지보수)"},
-            {"name": "achievements", "label": "주요 성과", "type": "textarea", "placeholder": "핵심 프로젝트, 달성한 목표, 개선 사항 등 구체적인 업무 성과를 작성하세요. 가급적 수치화하여 표현하세요."}
+            {"name": "portfolio_pdf", "label": "포트폴리오 PDF 업로드", "type": "file", "accept": ".pdf", "placeholder": "포트폴리오 PDF 파일을 업로드하세요."},
+            {"name": "portfolio_link", "label": "포트폴리오 링크 입력", "type": "text", "placeholder": "포트폴리오가 업로드된 웹사이트, 블로그, Github 등 링크를 입력하세요."}
         ]
     }
 }
