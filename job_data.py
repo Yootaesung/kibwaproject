@@ -149,21 +149,49 @@ JOB_DETAILS = {
 # doc_type: resume, cover_letter, portfolio, career_statement
 JOB_DOCUMENT_SCHEMAS = {
     "resume": {
-        "fields": [
-            {"name": "education", "label": "학력", "type": "textarea", "placeholder": "최종 학력, 학교명, 전공, 학위, 졸업년월일 등을 상세히 입력하세요. (예: 20XX년 X월 OO대학교 OO학과 졸업, 학사)"},
-            {"name": "gpa", "label": "학점", "type": "text", "placeholder": "총 평점 및 만점 기준을 입력하세요. (예: 4.0/4.5)"},
-            {"name": "awards", "label": "수상 내역", "type": "textarea", "placeholder": "수상명, 수상일, 주최 기관, 간략한 설명 등을 입력하세요. (예: 20XX년 OO공모전 대상 - 프로젝트명)"},
-            {"name": "activities", "label": "대외 활동", "type": "textarea", "placeholder": "활동명, 활동 기간, 역할, 주요 성과 또는 배운 점 등을 입력하세요. (예: 20XX년 OO봉사단 활동 - 팀장, OO 프로젝트 진행)"},
-            {"name": "career_experience", "label": "경력 사항", "type": "textarea", "placeholder": "근무 회사명, 근무 기간, 직무명, 담당 업무 및 주요 성과를 구체적으로 작성하세요. 신입의 경우 인턴십, 프로젝트 경험 등을 작성합니다."}
+        "korean_name": "이력서", # 문서 유형의 한글 이름 추가
+        "sections": [ # 새로운 'sections' 키를 추가하여 UI 구성을 더 유연하게
+            {
+                "title": "학력 사항",
+                "fields": [
+                    {"name": "education_history", "label": "학력", "type": "textarea", "placeholder": "최종 학력부터 고등학교까지 상세히 기재 (학교명, 전공, 기간, 학점 등)."},
+                ]
+            },
+            {
+                "title": "경력 사항",
+                "fields": [
+                    {"name": "career_history", "label": "경력", "type": "textarea", "placeholder": "회사명, 직위, 재직 기간, 주요 업무 및 성과 (신입의 경우 프로젝트 경험 위주로 작성). 각 경력/프로젝트별로 역할, 사용 기술, 기여도, 결과(수치화)를 구체적으로 작성해주세요."},
+                ]
+            },
+            {
+                "title": "자격증", # 자격증 섹션 추가
+                "fields": [
+                    {"name": "certificates_list", "label": "보유 자격증", "type": "textarea", "placeholder": "취득 자격증을 모두 기재 (자격증명, 발행기관, 취득일). 직무 관련 자격증 우선 기재."},
+                ]
+            },
+            {
+                "title": "수상 및 기타 활동",
+                "fields": [
+                    {"name": "awards_activities", "label": "수상 내역 및 대외활동", "type": "textarea", "placeholder": "수상 내역, 대외활동, 동아리 활동 등을 작성하세요."},
+                ]
+            },
+            {
+                "title": "기술 스택",
+                "fields": [
+                    {"name": "skills_tech", "label": "보유 기술 스택", "type": "textarea", "placeholder": "활용 가능한 프로그래밍 언어, 프레임워크, 툴 등을 상세히 작성하세요."},
+                ]
+            }
         ]
     },
-    "cover_letter": {
+    "cover_letter": { # 기존 자기소개서 스키마 유지 (필드명만 일관성 있게 수정)
+        "korean_name": "자기소개서",
         "fields": [
             {"name": "motivation_expertise", "label": "해당 직무의 지원동기와 전문성을 기르기 위해 노력한 경험", "type": "textarea", "placeholder": "내용을 입력하세요."},
             {"name": "collaboration_experience", "label": "공동의 목표를 위해 협업을 한 경험", "type": "textarea", "placeholder": "내용을 입력하세요."}
         ]
     },
-    "portfolio": {
+    "portfolio": { # 기존 포트폴리오 스키마 유지
+        "korean_name": "포트폴리오",
         "fields": [
             {"name": "portfolio_pdf", "label": "포트폴리오 PDF 업로드", "type": "file", "accept": ".pdf", "placeholder": "포트폴리오 PDF 파일을 업로드하세요."},
             {"name": "portfolio_link", "label": "포트폴리오 링크 입력", "type": "text", "placeholder": "포트폴리오가 업로드된 웹사이트, 블로그, Github 등 링크를 입력하세요."}

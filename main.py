@@ -34,23 +34,39 @@ async def get_ai_feedback(job_title: str, doc_type: str, document_content: Dict[
     OpenAI GPT 모델을 호출하여 문서 분석 피드백을 생성합니다.
     """
     try:
-        prompt = get_document_analysis_prompt(job_title, doc_type, document_content)
-        print(f"Generated Prompt for {doc_type} (Job: {job_title}):\n{prompt[:200]}...")
+        # job_data에서 해당 직무의 역량(competencies) 가져오기
+        job_slug = job_title.replace(" ", "-").replace("/", "-").lower() # prompts.py에서 사용할 수 있도록 slug로 변환
+        job_detail = JOB_DETAILS.get(job_title) # job_title 그대로 사용
+        job_competencies = job_detail.get("competencies") if job_detail else None
 
+        # prompt 생성 시 job_competencies 전달
+        prompt = get_document_analysis_prompt(job_title, doc_type, document_content, job_competencies)
+        print(f"Generated Prompt for {doc_type} (Job: {job_title}):\n{prompt[:200]}...") # 프롬프트 앞 200자만 출력
+
+        messages_for_ai = [
+            {"role": "system", "content": "You are a helpful AI assistant."},
+            {"role": "user", "content": prompt},
+        ]
+
+        # 이전 조건문 및 tools 변수 사용을 모두 제거하고,
+        # 기본 메시지만으로 API를 호출합니다.
         response = client.chat.completions.create(
             model=OPENAI_MODEL,
-            messages=[
-                {"role": "system", "content": "You are a professional career consultant AI."},
-                {"role": "user", "content": prompt}
-            ]
+            messages=messages_for_ai
         )
 
-        feedback = response.choices[0].message.content
-        return feedback
+        summary = response.choices[0].message.content.strip()
+
+        # AI가 '내용을 찾을 수 없다'고 응답했을 때의 처리
+        if "찾을 수 없다" in summary or "유효한 포트폴리오 내용을 찾을 수 없" in summary or "unable to access external URLs" in summary:
+             return JSONResponse(content={"error": summary}, status_code=400)
+
+        return JSONResponse(content={"feedback": summary}, status_code=200)
 
     except Exception as e:
-        print(f"Error during OpenAI feedback generation: {e}")
-        return f"AI 피드백을 생성하는 중 오류가 발생했습니다: {e}"
+        print(traceback.format_exc())
+        return JSONResponse(content={"error": f"AI 요약 오류: {e}"}, status_code=500)
+
 
 @app.get("/", response_class=HTMLResponse)
 async def read_root(request: Request):
@@ -89,26 +105,19 @@ async def get_document_schema(doc_type: str, job_slug: str):
         raise HTTPException(status_code=404, detail="Document schema not found for this type or job.")
     return JSONResponse(content=schema)
 
-@app.post("/api/analyze_document/{doc_type}", response_class=JSONResponse)
-async def analyze_document(
-    request: Request,
-    doc_type: str,
-    job_title: str = Form(...),
-    document_content: str = Form(...),
-    current_version: int = Form(...)
+@app.post("/api/analyze_document/{doc_type}")
+async def analyze_document_endpoint(
+    doc_type: str, request: Request, job_title: str = Form(...), document_content: str = Form(...)
 ):
     try:
-        parsed_document_content = json.loads(document_content)
+        doc_content_dict = json.loads(document_content)
+        feedback = await get_ai_feedback(job_title, doc_type, doc_content_dict)
+        return feedback
     except json.JSONDecodeError:
-        raise HTTPException(status_code=400, detail="Invalid JSON for document_content")
-
-    feedback = await get_ai_feedback(job_title, doc_type, parsed_document_content)
-
-    return JSONResponse(content={
-        "feedback": feedback,
-        "new_version_content": parsed_document_content,
-        "ai_analysis_status": "success"
-    })
+        raise HTTPException(status_code=400, detail="Invalid document_content JSON format")
+    except Exception as e:
+        print(f"Error in analyze_document_endpoint: {e}")
+        raise HTTPException(status_code=500, detail=f"Server error: {e}")
 
 @app.post("/api/portfolio_summary")
 async def portfolio_summary(
