@@ -1,5 +1,5 @@
 # main.py
-from fastapi import FastAPI, Request, Form, UploadFile, File, HTTPException, Body # Body 임포트 추가
+from fastapi import FastAPI, Request, Form, UploadFile, File, HTTPException, Body
 from fastapi.responses import HTMLResponse, JSONResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
@@ -17,7 +17,7 @@ from dotenv import load_dotenv
 from PyPDF2 import PdfReader
 from fpdf import FPDF
 import tempfile
-from pydantic import BaseModel # Pydantic BaseModel 임포트 추가
+from pydantic import BaseModel
 
 load_dotenv()
 
@@ -34,7 +34,7 @@ templates = Jinja2Templates(directory="templates")
 class AnalyzeDocumentRequest(BaseModel):
     job_title: str
     document_content: Dict[str, Any] # 클라이언트에서 넘어오는 JSON 객체를 받을 수 있도록 Dict[str, Any]로 명시
-    current_version: int # 이 필드가 클라이언트에서 넘어오지 않는다면 Optional로 변경하거나 제거 필요
+    current_version: Optional[int] = None # 이 필드를 Optional로 변경하고 기본값을 None으로 설정
 
 async def get_ai_feedback(job_title: str, doc_type: str, document_content: Dict[str, Any]):
     """
@@ -42,21 +42,24 @@ async def get_ai_feedback(job_title: str, doc_type: str, document_content: Dict[
     """
     try:
         # job_data에서 해당 직무의 역량(competencies) 가져오기
-        job_slug = job_title.replace(" ", "-").replace("/", "-").lower() # prompts.py에서 사용할 수 있도록 slug로 변환
-        job_detail = JOB_DETAILS.get(job_title) # job_title 그대로 사용
+        # job_slug는 get_document_analysis_prompt 내부에서 필요할 경우 변환되므로 job_title 그대로 전달
+        job_detail = JOB_DETAILS.get(job_title)
         job_competencies = job_detail.get("competencies") if job_detail else None
 
         # prompt 생성 시 job_competencies 전달
         prompt = get_document_analysis_prompt(job_title, doc_type, document_content, job_competencies)
         print(f"Generated Prompt for {doc_type} (Job: {job_title}):\n{prompt[:200]}...") # 프롬프트 앞 200자만 출력
 
+        # prompts.py에서 오류 문자열이 반환된 경우, 바로 에러 응답 반환
+        if prompt.startswith("오류:"):
+            return JSONResponse(content={"error": prompt}, status_code=400)
+
+
         messages_for_ai = [
             {"role": "system", "content": "You are a helpful AI assistant."},
             {"role": "user", "content": prompt},
         ]
 
-        # 이전 조건문 및 tools 변수 사용을 모두 제거하고,
-        # 기본 메시지만으로 API를 호출합니다.
         response = client.chat.completions.create(
             model=OPENAI_MODEL,
             messages=messages_for_ai
@@ -105,7 +108,7 @@ async def get_document_editor_page(request: Request, job_slug: str):
         {"request": request, "job_title": job_title, "job_slug": job_slug, "job_details": job_details}
     )
 
-@app.get("/api/job_schema/{doc_type}", response_class=JSONResponse)
+@app.get("/api/document_schema/{doc_type}", response_class=JSONResponse)
 async def get_document_schema(doc_type: str, job_slug: str):
     schema = get_job_document_schema(job_slug, doc_type)
     if not schema:
@@ -114,20 +117,18 @@ async def get_document_schema(doc_type: str, job_slug: str):
 
 @app.post("/api/analyze_document/{doc_type}")
 async def analyze_document_endpoint(
-    doc_type: str, request_data: AnalyzeDocumentRequest # Request Body로 Pydantic 모델 사용
+    doc_type: str, request_data: AnalyzeDocumentRequest
 ):
     try:
-        # request_data 객체에서 직접 데이터 접근
         job_title = request_data.job_title
         doc_content_dict = request_data.document_content
-        # current_version = request_data.current_version # 필요하다면 사용
-
-        feedback = await get_ai_feedback(job_title, doc_type, doc_content_dict)
-        return feedback
+        
+        feedback_response = await get_ai_feedback(job_title, doc_type, doc_content_dict)
+        
+        # get_ai_feedback에서 반환된 JSONResponse를 그대로 반환
+        return feedback_response
     except Exception as e:
         print(f"Error in analyze_document_endpoint: {e}")
-        # Pydantic 유효성 검사 실패는 FastAPI가 자동으로 422 응답을 생성합니다.
-        # 따라서 여기서는 다른 일반적인 서버 오류만 처리합니다.
         raise HTTPException(status_code=500, detail=f"Server error: {e}")
 
 
@@ -137,17 +138,14 @@ async def portfolio_summary(
     portfolio_link: str = Form(None),
     job_title: str = Form(...)
 ):
-    summary = ""
     doc_type_for_prompt = ""
     prompt_content_for_ai = {}
     
     if portfolio_pdf and portfolio_pdf.filename:
-        # PDF 파일에서 텍스트 추출
         doc_type_for_prompt = "portfolio_summary_text"
         try:
-            # 파일 크기 확인 (10MB 이하만 허용)
             contents = await portfolio_pdf.read()
-            if len(contents) > 10 * 1024 * 1024:   # 10MB
+            if len(contents) > 10 * 1024 * 1024: 
                 return JSONResponse(
                     content={"error": "파일 크기가 너무 큽니다. 10MB 이하의 파일을 업로드해주세요."}, 
                     status_code=400
@@ -172,7 +170,6 @@ async def portfolio_summary(
                 prompt_content_for_ai = {"extracted_text": extracted_text}
                 
             finally:
-                # 임시 파일 정리
                 try:
                     os.unlink(tmp_path)
                 except:
@@ -186,7 +183,6 @@ async def portfolio_summary(
             )
             
     elif portfolio_link and portfolio_link.strip():
-        # URL 유효성 검사
         if not (portfolio_link.startswith('http://') or portfolio_link.startswith('https://')):
             portfolio_link = 'http://' + portfolio_link
             
@@ -199,27 +195,21 @@ async def portfolio_summary(
             status_code=400
         )
 
-    # 2. OpenAI로 요약 생성
+    # 2. OpenAI로 요약 생성 (get_ai_feedback 함수를 통해)
     try:
-        summary_prompt = get_document_analysis_prompt(job_title, doc_type_for_prompt, prompt_content_for_ai)
-
-        messages_for_ai = [
-            {"role": "system", "content": "You are a professional career consultant AI."},
-            {"role": "user", "content": summary_prompt}
-        ]
+        # get_ai_feedback은 JSONResponse를 반환하므로, 이를 처리
+        ai_response = await get_ai_feedback(job_title, doc_type_for_prompt, prompt_content_for_ai)
         
-        # ⭐ tools 매개변수를 전달하는 조건문 및 tools 변수 사용을 모두 제거하고,
-        # 기본 메시지만으로 API를 호출합니다.
-        response = client.chat.completions.create(
-            model=OPENAI_MODEL,
-            messages=messages_for_ai
-        )
+        # get_ai_feedback에서 에러가 발생하면 해당 에러 응답을 그대로 반환
+        if ai_response.status_code != 200:
+            return ai_response
+        
+        # 성공 시, feedback 내용을 추출하여 summary 변수에 할당
+        summary_content = json.loads(ai_response.body.decode('utf-8'))
+        summary = summary_content.get("feedback", "")
 
-        summary = response.choices[0].message.content.strip()
-
-        # AI가 '내용을 찾을 수 없다'고 응답했을 때의 처리
-        if "찾을 수 없다" in summary or "유효한 포트폴리오 내용을 찾을 수 없" in summary or "unable to access external URLs" in summary:
-             return JSONResponse(content={"error": summary}, status_code=400)
+        if not summary: # 피드백 내용이 비어있으면 에러
+            return JSONResponse(content={"error": "AI 요약 내용이 없습니다."}, status_code=500)
 
     except Exception as e:
         print(traceback.format_exc())
@@ -230,6 +220,10 @@ async def portfolio_summary(
         pdf = FPDF()
         pdf.add_page()
         font_path = os.path.join("static", "fonts", "NotoSansKR-Regular.ttf")
+        # 폰트 파일 존재 여부 확인
+        if not os.path.exists(font_path):
+            raise FileNotFoundError(f"폰트 파일을 찾을 수 없습니다: {font_path}. static/fonts/NotoSansKR-Regular.ttf 경로를 확인해주세요.")
+
         pdf.add_font("NotoSans", "", font_path, uni=True)
         pdf.set_font("NotoSans", size=12)
         pdf.multi_cell(0, 10, summary)
@@ -242,7 +236,7 @@ async def portfolio_summary(
         return JSONResponse(content={"error": f"PDF 생성 오류: {e}"}, status_code=500)
 
     # 4. PDF 파일 반환
-    return FileResponse(pdf_path, filename="portfolio_summary.pdf", media_type="application/pdf")
+    return FileResponse(pdf_path, filename=f"portfolio_summary_{job_title}.pdf", media_type="application/pdf")
 
 
 if __name__ == "__main__":

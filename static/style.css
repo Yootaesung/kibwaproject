@@ -38,134 +38,130 @@ h1 {
 #document-diagram {
   position: relative;
   width: 100%;
-  min-height: 400px; /* 다이아그램 높이 */
-  background-color: #e0f2f7;
-  border-radius: 10px;
-  padding: 30px;
-  box-sizing: border-box; /* 패딩이 너비에 포함되도록 하여 부모를 벗어나지 않게 함 */
-  box-shadow: inset 0 0 10px rgba(0, 0, 0, 0.05);
+  min-height: 400px; /* 필요에 따라 높이 조정 */
+  padding: 20px 0; /* 상하 패딩 유지, 좌우 패딩 제거 */
   display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 20px; /* 세로 간격 */
+  flex-direction: column; /* 직무 노드와 레인 컨테이너를 수직으로 정렬 */
+  align-items: center; /* 가로 중앙 정렬 */
+  gap: 30px; /* 직무 노드와 레인 컨테이너 사이 간격 */
 }
 
-.diagram-node {
-  background-color: #ffffff;
-  border: 2px solid #007bff;
-  border-radius: 8px;
-  padding: 15px 25px;
-  font-weight: bold;
-  color: #333;
-  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
-  cursor: pointer;
-  transition: all 0.3s ease;
-  text-align: center;
-  position: relative; /* 연결선 기준점 */
+/* 새로운 문서 레인 컨테이너 - 이력서, 자기소개서, 포트폴리오 레인을 수평으로 배치 */
+.document-lanes-container {
+  display: flex;
+  justify-content: space-around; /* 레인들을 고르게 분배 */
+  width: 100%; /* 부모 너비 전체 사용 */
+  gap: 20px; /* 각 레인 사이의 간격 */
+  padding: 0 10px; /* 좌우 패딩 */
 }
-.diagram-node:hover {
-  transform: translateY(-5px);
-  box-shadow: 0 6px 12px rgba(0, 0, 0, 0.15);
-  background-color: #e3f2fd;
+
+/* 각 문서 타입별 레인 - 노드들을 수직으로 배치 */
+.document-lane {
+  display: flex;
+  flex-direction: column;
+  align-items: center; /* 레인 내의 노드들을 중앙 정렬 */
+  gap: 20px; /* 레인 내 노드들 간의 간격 */
+  flex: 1; /* 가변 너비 설정 */
+  min-width: 150px; /* 최소 너비 */
+  padding: 10px;
+  position: relative; /* 자식 요소의 절대 위치 지정을 위한 기준 */
 }
 
 .job-node {
-  background-color: #0056b3;
+  background-color: #007bff; /* 파란색 계열 */
   color: white;
-  font-size: 1.8em;
-  padding: 20px 40px;
-  border-color: #004085;
-  margin-bottom: 30px; /* 초기 문서와 간격 */
-}
-
-.initial-documents {
-  display: flex;
-  justify-content: space-around; /* 노드들을 수평으로 균등하게 배치 */
-  width: 100%;
-  margin-top: 40px;
-  padding: 0 20px; /* 좌우 패딩 추가하여 경력기술서 노드가 벗어나는 문제 해결 */
-  box-sizing: border-box; /* 패딩이 너비에 포함되도록 설정 */
-  align-items: flex-start; /* 각 column의 상단을 기준으로 정렬 */
+  padding: 15px 30px;
+  border-radius: 8px;
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+  font-weight: bold;
+  text-align: center;
   position: relative;
-  padding: 20px; /* 추가 패딩 */
-  box-sizing: border-box; /* 패딩이 너비에 포함되도록 설정 */
+  z-index: 10;
+  margin-bottom: 0; /* 부모의 gap 속성을 사용하도록 마진 제거 */
 }
 
-.document-column {
-  display: flex;
-  flex-direction: column; /* 노드를 수직으로 쌓음 */
-  align-items: center; /* 수직 축의 가운데 정렬 */
-  gap: 40px; /* 노드 사이의 수직 간격 증가 */
+.diagram-node {
+  background-color: #e9ecef; /* 기본 밝은 회색, document-node에서 오버라이드 */
+  color: #343a40; /* 어두운 글씨색 */
+  padding: 10px 20px;
+  border-radius: 6px;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+  cursor: pointer;
+  transition: all 0.2s ease-in-out;
+  text-align: center;
+  white-space: nowrap;
+  position: relative; /* 자식 요소의 absolute 포지셔닝을 위한 기준 */
+  z-index: 5;
+  margin: 0; /* 특정 마진 제거, 부모의 gap 사용 */
 }
 
-.document-node {
-  font-size: 1.1em;
-  border-color: #28a745;
-  color: #216a3c;
-  flex: 1; /* 가로로 균등 배치 */
-  margin: 0 10px; /* 노드 간 가로 간격 */
+.diagram-node:hover {
+  background-color: #d6e2f0; /* 호버 시 밝은 파란색 (document-node에서 오버라이드) */
+  transform: translateY(-2px);
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.15);
+}
+
+/* 모든 문서 노드의 통일된 스타일 (v0 포함) */
+.diagram-node.document-node {
+  background-color: #d4edda; /* 기존 v0 노드 색상으로 통일 (연두색 계열) */
+  border: 1px solid #c3e6cb; /* 연두색 테두리 */
+  color: #155724; /* 진한 녹색 글씨 */
+  padding-bottom: 40px; /* 되돌리기 버튼 공간 확보 */
+  font-weight: bold; /* v0처럼 굵게 */
+}
+
+/* v0는 이제 document-node의 스타일을 상속받으므로, 별도의 배경색은 필요 없음 */
+.diagram-node.v0 {
+  /* background-color: #d4edda; */ /* 이 부분은 document-node에 통합 */
+  /* font-weight: bold; */ /* 이 부분은 document-node에 통합 */
+}
+
+/* 노드와 되돌리기 버튼을 감싸는 그룹 (node-version-group은 노드를 수직으로 정렬하는 역할을 유지) */
+.node-version-group {
   display: flex;
-  flex-direction: column;
+  flex-direction: column; /* 노드와 버튼을 수직으로 쌓음 */
   align-items: center;
-  gap: 8px;
-}
-
-.extended-node {
-  background-color: #d4edda;
-  border-color: #28a745;
-  font-size: 1em;
-  margin-top: 20px; /* 위 노드와의 수직 간격 */
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
-}
-.extended-node:hover {
-  background-color: #c3e6cb;
-}
-
-/* 연결선 (CSS로 간단하게 그리기) - 매우 제한적. SVG 권장 */
-/* 직무 노드 -> 초기 문서 노드 연결선 */
-/* 이 부분은 JavaScript에서 동적으로 계산하여 SVG로 그리는 것이 훨씬 좋습니다. */
-/* CSS만으로는 동적으로 정확한 연결선을 그리기 매우 어렵습니다. */
-/* 예시: initial-documents 위에 가상 요소를 사용하여 선처럼 보이게 */
-.initial-documents::before {
-  content: "";
-  position: absolute;
-  top: -30px; /* 직무 노드 높이/2 + 간격 */
-  left: 50%;
-  transform: translateX(-50%);
-  width: 2px;
-  height: 20px; /* 직무 노드와 초기 문서 사이의 수직선 */
-  background-color: #007bff;
-  z-index: -1;
-}
-
-/* 개별 문서 노드 사이의 수직선 (확장된 뼈대) */
-/* 이 또한 JS로 동적 생성 시 각 노드의 위치를 계산하여 그려야 함 */
-/* 예시: extended-node의 :before 가상 요소를 사용하여 위 노드와 연결 */
-.extended-node::before {
-  content: "";
-  position: absolute;
-  top: -20px; /* 위 노드 높이/2 + 간격 */
-  left: 50%;
-  transform: translateX(-50%);
-  width: 2px;
-  height: 15px; /* 위 노드와 현재 노드 사이의 수직선 */
-  background-color: #28a745;
-  z-index: -1;
+  gap: 5px; /* 노드와 버튼 사이 간격 */
+  position: relative;
+  width: 100%; /* 부모 레인의 너비에 맞춰 정렬 */
 }
 
 .rollback-button {
-  background-color: #ffc107;
+  background-color: #ffc107; /* 노란색 */
   color: #333;
   border: none;
-  border-radius: 5px;
   padding: 5px 10px;
-  font-size: 0.8em;
+  border-radius: 5px;
   cursor: pointer;
-  margin-top: 5px;
-  transition: background-color 0.2s;
+  font-size: 0.8em;
+  white-space: nowrap;
+  transition: background-color 0.2s; /* opacity transition 제거 */
+  position: absolute; /* 노드 내부에 절대 위치 */
+  bottom: 5px; /* 노드 하단에 배치 */
+  left: 50%; /* 가로 중앙 정렬 */
+  transform: translateX(-50%); /* 정확한 중앙 정렬 */
+  opacity: 1; /* 항상 보이도록 설정 */
+  z-index: 6; /* 노드 위에 오도록 z-index 설정 */
 }
+
+/* .diagram-node:hover .rollback-button { */
+/* opacity: 1; */ /* 이 규칙 제거 */
+/* } */
+
 .rollback-button:hover {
   background-color: #e0a800;
+}
+
+/* CSS로 선을 그리는 부분은 제거하거나 숨깁니다. (JS/SVG로 구현 권장) */
+#document-diagram::before,
+.job-node::after,
+.initial-documents > div:nth-child(1)::before,
+.initial-documents > div:nth-child(2)::before,
+.initial-documents > div:nth-child(3)::before,
+.initial-documents > div:nth-child(4)::before, /* 추가된 네 번째 자식도 포함 */
+.document-node::before, /* 이전 버전의 document-node::before도 포함 */
+.extended-node::before {
+  display: none !important; /* 모든 CSS 기반 선 그리기 요소 숨김 */
 }
 
 /* 모달 스타일 (이전과 유사) */
@@ -315,50 +311,3 @@ button[type="submit"]:hover,
 .remove-qa:hover {
   background-color: #c82333 !important;
 }
-
-/* Diagram line drawing (example, for full control use SVG) */
-/* This is a placeholder and will likely need advanced JS/SVG for complex, dynamic lines */
-/* The lines below are illustrative and hardcoded; a real solution needs dynamic positioning */
-#document-diagram::before {
-  /* Main spine */
-  content: "";
-  position: absolute;
-  top: 120px; /* Adjust based on job-node height */
-  left: 50%;
-  transform: translateX(-50%);
-  width: 4px;
-  height: calc(100% - 150px); /* Extend down */
-  background-color: #aaa;
-  z-index: -2;
-}
-
-/* Initial branch lines (conceptual, needs JS to calculate exact points) */
-/* Example for first set of branches: */
-.job-node::after {
-  content: "";
-  position: absolute;
-  bottom: -30px; /* From job node to initial docs */
-  left: 50%;
-  transform: translateX(-50%);
-  width: 2px;
-  height: 30px;
-  background-color: #007bff;
-  z-index: -1;
-}
-.initial-documents > div:nth-child(1)::before,
-.initial-documents > div:nth-child(2)::before,
-.initial-documents > div:nth-child(3)::before,
-.initial-documents > div:nth-child(4)::before {
-  content: "";
-  position: absolute;
-  top: -20px;
-  left: 50%;
-  transform: translateX(-50%);
-  width: 2px;
-  height: 20px;
-  background-color: #007bff;
-  z-index: -1;
-}
-/* Horizontal lines connecting initial docs to main spine */
-/* This is very tricky with pure CSS; consider SVG overlay. */
-/* You would need to position individual lines for each connection. */
