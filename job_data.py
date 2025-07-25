@@ -37,9 +37,35 @@ JOB_DETAILS = {
         "description": "웹사이트의 사용자 인터페이스(UI)를 구축하고 사용자 경험(UX)을 개선하는 역할입니다."
     },
     "백엔드 개발자": {
-        "competencies": ["Python", "Java", "Node.js", "Spring Framework", "Django/Flask", "RESTful API", "RDBMS (SQL)", "NoSQL", "Docker", "AWS/GCP/Azure"],
-        "certifications": ["정보처리기사", "OCJP (Oracle Certified Java Programmer)", "SQLD/SQLP (국가공인 데이터베이스 자격증)", "정보보안기사"], # SQL 자격증, 정보보안기사 추가
-        "description": "서버, 데이터베이스 및 애플리케이션의 핵심 로직을 담당합니다."
+        "competencies": [
+            "Python",
+            "JavaScript(TypeScript)",
+            "Node.js",
+            "FastAPI",
+            "NestJS",
+            "RDBMS (SQL)",
+            "NoSQL (MongoDB, Redis 등)",
+            "AWS",
+            "RESTful API",
+            "GraphQL",
+            "Git",
+            "CI/CD",
+            "Docker",
+            "Kubernetes",
+            "Istio",
+            "Helm",
+            "대용량 시스템 설계 및 운영",
+            "MSA",
+            "시스템 설계",
+            "데이터베이스 설계"
+        ],
+        "certifications": [
+            "정보처리기사",
+            "OCJP (Oracle Certified Java Programmer)",
+            "SQLD/SQLP (국가공인 데이터베이스 자격증)",
+            "정보보안기사"
+        ],
+        "description": "서버, 데이터베이스 및 애플리케이션의 핵심 로직을 담당하며, 안정적이고 확장 가능한 백엔드 시스템을 설계, 개발, 운영하고 서비스 확장에 기여합니다."
     },
     "AI/데이터 개발자": {
         "competencies": ["Python", "R", "머신러닝 알고리즘", "딥러닝 프레임워크 (TensorFlow/PyTorch)", "데이터 전처리/분석", "SQL", "빅데이터 기술 (Spark/Hadoop)"],
