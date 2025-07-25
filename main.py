@@ -1,5 +1,5 @@
 # main.py
-from fastapi import FastAPI, Request, Form, UploadFile, File, HTTPException
+from fastapi import FastAPI, Request, Form, UploadFile, File, HTTPException, Body # Body 임포트 추가
 from fastapi.responses import HTMLResponse, JSONResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
@@ -17,6 +17,7 @@ from dotenv import load_dotenv
 from PyPDF2 import PdfReader
 from fpdf import FPDF
 import tempfile
+from pydantic import BaseModel # Pydantic BaseModel 임포트 추가
 
 load_dotenv()
 
@@ -28,6 +29,12 @@ app = FastAPI()
 
 app.mount("/static", StaticFiles(directory="static"), name="static")
 templates = Jinja2Templates(directory="templates")
+
+# 이력서 분석 요청을 위한 Pydantic 모델 정의
+class AnalyzeDocumentRequest(BaseModel):
+    job_title: str
+    document_content: Dict[str, Any] # 클라이언트에서 넘어오는 JSON 객체를 받을 수 있도록 Dict[str, Any]로 명시
+    current_version: int # 이 필드가 클라이언트에서 넘어오지 않는다면 Optional로 변경하거나 제거 필요
 
 async def get_ai_feedback(job_title: str, doc_type: str, document_content: Dict[str, Any]):
     """
@@ -107,17 +114,22 @@ async def get_document_schema(doc_type: str, job_slug: str):
 
 @app.post("/api/analyze_document/{doc_type}")
 async def analyze_document_endpoint(
-    doc_type: str, request: Request, job_title: str = Form(...), document_content: str = Form(...)
+    doc_type: str, request_data: AnalyzeDocumentRequest # Request Body로 Pydantic 모델 사용
 ):
     try:
-        doc_content_dict = json.loads(document_content)
+        # request_data 객체에서 직접 데이터 접근
+        job_title = request_data.job_title
+        doc_content_dict = request_data.document_content
+        # current_version = request_data.current_version # 필요하다면 사용
+
         feedback = await get_ai_feedback(job_title, doc_type, doc_content_dict)
         return feedback
-    except json.JSONDecodeError:
-        raise HTTPException(status_code=400, detail="Invalid document_content JSON format")
     except Exception as e:
         print(f"Error in analyze_document_endpoint: {e}")
+        # Pydantic 유효성 검사 실패는 FastAPI가 자동으로 422 응답을 생성합니다.
+        # 따라서 여기서는 다른 일반적인 서버 오류만 처리합니다.
         raise HTTPException(status_code=500, detail=f"Server error: {e}")
+
 
 @app.post("/api/portfolio_summary")
 async def portfolio_summary(
@@ -135,7 +147,7 @@ async def portfolio_summary(
         try:
             # 파일 크기 확인 (10MB 이하만 허용)
             contents = await portfolio_pdf.read()
-            if len(contents) > 10 * 1024 * 1024:  # 10MB
+            if len(contents) > 10 * 1024 * 1024:   # 10MB
                 return JSONResponse(
                     content={"error": "파일 크기가 너무 큽니다. 10MB 이하의 파일을 업로드해주세요."}, 
                     status_code=400

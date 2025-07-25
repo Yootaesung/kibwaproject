@@ -1,8 +1,8 @@
 # prompts.py
-from typing import Dict, Any 
+from typing import Dict, Any, Optional # Optional 임포트 추가
 from job_data import JOB_DETAILS # JOB_DETAILS 임포트
 
-def get_document_analysis_prompt(job_title: str, doc_type: str, document_content: Dict[str, Any]) -> str:
+def get_document_analysis_prompt(job_title: str, doc_type: str, document_content: Dict[str, Any], job_competencies: Optional[list[str]] = None) -> str:
     """
     OpenAI AI 모델에 전달할 문서 분석 프롬프트를 생성합니다.
     """
@@ -23,12 +23,12 @@ def get_document_analysis_prompt(job_title: str, doc_type: str, document_content
                 f"유사한 기술 스택을 얼마나 잘 갖추고 있는지 평가하고, 부족한 점이나 추가로 어필할 수 있는 기술 스택에 대한 구체적인 피드백을 제공해주세요."
             )
 
-        prompt = f"{base_feedback_prompt}--- 이력서 분석 ---\\n\\n현재 이력서 내용:\\n{content_str}\\n\\n[피드백 요청]\\n" \
-                 f"{job_title} 직무 관점에서 이력서의 각 항목(학력, 전공, 학점, 수상내역, 대외활동, 경력, 기술 스택 등)이 직무와 얼마나 관련성이 높고 매력적인지 분석하고, 다음 사항들을 중점적으로 피드백해주세요:\n" \
-                 f"- 각 항목을 직무와 연결하여 더 효과적으로 어필하는 방법\n" \
-                 f"- 불필요하거나 부족한 내용에 대한 구체적인 개선 방안\n" \
-                 f"{tech_stack_feedback_request}\n" \
-                 f"- 전체적인 가독성 및 형식 개선 제안"
+        prompt = f"{base_feedback_prompt}--- 이력서 분석 ---\n\n현재 이력서 내용:\n{content_str}\n\n[피드백 요청]\n" \
+                     f"{job_title} 직무 관점에서 이력서의 각 항목(학력, 전공, 학점, 수상내역, 대외활동, 경력, 기술 스택 등)이 직무와 얼마나 관련성이 높고 매력적인지 분석하고, 다음 사항들을 중점적으로 피드백해주세요:\n" \
+                     f"- 각 항목을 직무와 연결하여 더 효과적으로 어필하는 방법\n" \
+                     f"- 불필요하거나 부족한 내용에 대한 구체적인 개선 방안\n" \
+                     f"{tech_stack_feedback_request}\n" \
+                     f"- 전체적인 가독성 및 형식 개선 제안"
         
     elif doc_type == "cover_letter":
         # 자기소개서 필드명 변경에 맞춰 document_content에서 직접 값 가져오기

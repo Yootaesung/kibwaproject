@@ -38,6 +38,7 @@ function setupNodeClickEvents() {
 
       modalTitle.textContent = `${currentDocTitle} 편집 (v${currentDocVersion})`;
 
+      // 팝업을 열 때 해당 버전의 데이터를 불러옴
       const versionData = documentData[currentDocType].find(
         (d) => d.version === currentDocVersion
       );
@@ -69,7 +70,7 @@ function setupNodeClickEvents() {
 
         console.log("Fetched Form Schema:", formSchema); // Log the schema for debugging
 
-        renderFormFields(formSchema, docContent);
+        renderFormFields(formSchema, docContent); // 불러온 데이터로 폼 필드 렌더링
 
         if (savedFeedback) {
           aiFeedbackContent.textContent = savedFeedback;
@@ -106,7 +107,9 @@ function renderFormFields(schema, currentContent) {
             </div>
             <div class="input-group">
                 <label>포트폴리오 링크 입력:</label>
-                <input type="text" name="portfolio_link" placeholder="포트폴리오가 업로드된 웹사이트, 블로그, Github 등 링크를 입력하세요.">
+                <input type="text" name="portfolio_link" placeholder="포트폴리오가 업로드된 웹사이트, 블로그, Github 등 링크를 입력하세요." value="${
+                  currentContent.portfolio_link || ""
+                }">
             </div>
         `;
     const submitBtn = document.querySelector(
@@ -242,23 +245,30 @@ async function handleDocumentFormSubmit(e) {
   const docContent = {};
 
   for (let [key, value] of formData.entries()) {
+    // portfolio_pdf는 다른 핸들러에서 처리되므로 여기서는 제외
     if (key !== "portfolio_pdf") {
       docContent[key] = value;
     }
   }
 
-  let isEmpty = true;
+  // **** 이 부분에 유효성 검사 로직 추가 또는 강화 ****
+  let hasMeaningfulContent = false;
   for (const key in docContent) {
-    if (docContent[key] && docContent[key].trim() !== "") {
-      isEmpty = false;
+    if (
+      docContent.hasOwnProperty(key) &&
+      docContent[key] &&
+      docContent[key].trim() !== ""
+    ) {
+      hasMeaningfulContent = true;
       break;
     }
   }
 
-  if (isEmpty) {
+  if (!hasMeaningfulContent) {
     alert("분석할 내용이 없습니다. 내용을 입력해주세요.");
-    return;
+    return; // 내용이 없으면 여기서 함수 종료
   }
+  // *************************************************
 
   try {
     const analysisData = {
@@ -288,23 +298,18 @@ async function handleDocumentFormSubmit(e) {
         (d) => d.version === currentDocVersion
       );
       if (versionToUpdate) {
-        versionToUpdate.content = docContent;
+        versionToUpdate.content = docContent; // 기존 버전 업데이트
+        versionToUpdate.feedback = result.feedback; // 피드백도 함께 저장
       }
 
-      const newVersion = documentData[currentDocType].length;
-      const originalKoreanName = documentData[currentDocType][0].koreanName;
-      documentData[currentDocType].push({
-        version: newVersion,
-        content: docContent,
-        displayContent: `${originalKoreanName} (v${newVersion})`,
-        koreanName: originalKoreanName,
-        feedback: result.feedback,
-      });
-      currentDocVersion = newVersion;
       drawDiagram();
       alert("문서가 저장되고 분석되었습니다. AI 피드백을 확인하세요.");
     } else {
-      alert(`분석 실패: ${result.error || "알 수 없는 오류"}`);
+      // 서버에서 422 오류 메시지를 더 상세하게 보내줄 경우 처리
+      const errorMessage = result.detail
+        ? result.detail.map((d) => d.msg).join(", ")
+        : result.error || "알 수 없는 오류";
+      alert(`분석 실패: ${errorMessage}`);
     }
   } catch (error) {
     console.error("API 통신 오류:", error);
@@ -330,6 +335,16 @@ async function handlePortfolioFormSubmit(e) {
   if (linkInput.value.trim()) {
     formData.append("portfolio_link", linkInput.value.trim());
   }
+  // 현재 입력된 링크 값도 documentData에 저장
+  if (currentDocType && currentDocVersion !== undefined) {
+    const versionToUpdate = documentData[currentDocType].find(
+      (d) => d.version === currentDocVersion
+    );
+    if (versionToUpdate) {
+      versionToUpdate.content = { portfolio_link: linkInput.value.trim() };
+    }
+  }
+
   if (formData.has("portfolio_pdf") || formData.get("portfolio_link")) {
     loadingOverlay.style.display = "flex";
     try {
@@ -447,6 +462,49 @@ function rollbackDocument(docType, versionToRollback) {
   }
 }
 
+/**
+ * 현재 폼 필드의 내용을 documentData에 임시 저장합니다.
+ */
+function saveCurrentFormContent() {
+  if (!currentDocType || currentDocVersion === undefined) return; // 현재 편집 중인 문서가 없으면 저장하지 않음
+
+  const versionToUpdate = documentData[currentDocType].find(
+    (d) => d.version === currentDocVersion
+  );
+
+  if (versionToUpdate) {
+    const docContent = {};
+    if (currentDocType === "portfolio") {
+      const linkInput = document.querySelector('input[name="portfolio_link"]');
+      if (linkInput) {
+        docContent.portfolio_link = linkInput.value.trim();
+      }
+      // PDF 파일은 Blob으로 저장하기 어려우므로, 링크만 유지
+    } else if (currentDocType === "cover_letter") {
+      const motivationExpertise = document.querySelector(
+        'textarea[name="motivation_expertise"]'
+      );
+      const collaborationExperience = document.querySelector(
+        'textarea[name="collaboration_experience"]'
+      );
+      if (motivationExpertise)
+        docContent.motivation_expertise = motivationExpertise.value;
+      if (collaborationExperience)
+        docContent.collaboration_experience = collaborationExperience.value;
+    } else {
+      // 이력서 등 일반 문서
+      const formData = new FormData(documentForm);
+      for (let [key, value] of formData.entries()) {
+        if (key !== "portfolio_pdf") {
+          // PDF 제외
+          docContent[key] = value;
+        }
+      }
+    }
+    versionToUpdate.content = docContent;
+  }
+}
+
 // 3. 초기 로딩 시 데이터 설정 및 이벤트 리스너 설정
 document.addEventListener("DOMContentLoaded", () => {
   jobTitle = document.body.dataset.jobTitle;
@@ -483,14 +541,18 @@ document.addEventListener("DOMContentLoaded", () => {
 
   drawDiagram();
 
+  // 팝업창 닫기 버튼 클릭 이벤트 수정
   document.querySelector(".close-button").onclick = () => {
+    saveCurrentFormContent(); // 닫기 전에 현재 내용 저장
     editModal.style.display = "none";
     aiFeedbackContent.textContent = "";
     aiFeedbackArea.style.display = "none";
   };
 
+  // 모달 외부 클릭 시 닫기 이벤트 수정
   window.onclick = (event) => {
     if (event.target == editModal) {
+      saveCurrentFormContent(); // 닫기 전에 현재 내용 저장
       editModal.style.display = "none";
       aiFeedbackContent.textContent = "";
       aiFeedbackArea.style.display = "none";
