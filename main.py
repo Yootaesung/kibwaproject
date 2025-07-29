@@ -1,5 +1,5 @@
 # main.py
-from fastapi import FastAPI, Request, Form, UploadFile, File, HTTPException, Body
+from fastapi import FastAPI, Request, Form, UploadFile, File, HTTPException, Body, Depends
 from fastapi.responses import HTMLResponse, JSONResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
@@ -18,63 +18,75 @@ from PyPDF2 import PdfReader
 from fpdf import FPDF
 import tempfile
 from pydantic import BaseModel
-from pymongo import MongoClient # MongoDB 클라이언트 임포트
+from motor.motor_asyncio import AsyncIOMotorClient
 
 load_dotenv()
 
 # OpenAI API 설정
 OPENAI_MODEL = "gpt-4o"
+OPENAI_EMBEDDING_MODEL = "text-embedding-3-small"
 client = OpenAI(api_key=os.getenv('OPENAI_API_KEY'))
 
 app = FastAPI()
 
+# MongoDB 설정
+MONGODB_URL = os.getenv("MONGODB_URL", "mongodb://localhost:27017/")
+DB_NAME = "kibwaproject"
+
+# MongoDB 클라이언트 초기화 및 연결/해제 관리
+async def get_database():
+    client = AsyncIOMotorClient(MONGODB_URL)
+    db = client[DB_NAME]
+    try:
+        yield db
+    finally:
+        client.close()
+
 app.mount("/static", StaticFiles(directory="static"), name="static")
 templates = Jinja2Templates(directory="templates")
-
-# MongoDB 설정
-MONGO_URI = "mongodb://13.125.60.100:27017/"
-mongo_client = MongoClient(MONGO_URI)
-db = mongo_client.kibwaproject
-cover_letter_collection = db.Cover_Letter
-resume_collection = db.Resume
-# user_documents_collection = db.user_documents # For a more generalized approach, could use one collection with doc_type field
-
-# Helper function to get the correct collection
-def _get_collection(doc_type: str):
-    if doc_type == "resume":
-        return resume_collection
-    elif doc_type == "cover_letter":
-        return cover_letter_collection
-    else:
-        raise HTTPException(status_code=400, detail="Unsupported document type for database operations.")
 
 # 이력서 분석 요청을 위한 Pydantic 모델 정의
 class AnalyzeDocumentRequest(BaseModel):
     job_title: str
-    document_content: Dict[str, Any] # 클라이언트에서 넘어오는 JSON 객체를 받을 수 있도록 Dict[str, Any]로 명시
-    version: int # 클라이언트에서 넘어오는 버전 정보 추가
+    document_content: Dict[str, Any]
+    version: int # 클라이언트에서 넘어오는 현재 버전 (newVersionNumber)
 
-async def get_ai_feedback(job_title: str, doc_type: str, document_content: Dict[str, Any]):
+async def get_ai_feedback(
+    job_title: str,
+    doc_type: str,
+    document_content: Dict[str, Any],
+    job_competencies: Optional[list[str]] = None,
+    previous_document_content: Optional[Dict[str, Any]] = None, # 이전 버전 문서 내용
+    previous_feedback: Optional[str] = None, # 이전 버전 피드백
+    older_document_content: Optional[Dict[str, Any]] = None, # 그 이전 버전 문서 내용 (vN-2)
+    older_feedback: Optional[str] = None # 그 이전 버전 피드백 (vN-2)
+):
     """
     OpenAI GPT 모델을 호출하여 문서 분석 피드백을 생성합니다.
+    이전 버전의 문서 내용과 피드백을 참고하여 더 정밀한 피드백을 제공합니다.
     """
     try:
-        # job_data에서 해당 직무의 역량(competencies) 가져오기
-        # job_slug는 get_document_analysis_prompt 내부에서 필요할 경우 변환되므로 job_title 그대로 전달
         job_detail = JOB_DETAILS.get(job_title)
-        job_competencies = job_detail.get("competencies") if job_detail else None
+        job_competencies_list = job_detail.get("competencies") if job_detail else None
 
-        # prompt 생성 시 job_competencies 전달
-        prompt = get_document_analysis_prompt(job_title, doc_type, document_content, job_competencies)
-        print(f"Generated Prompt for {doc_type} (Job: {job_title}):\n{prompt[:200]}...") # 프롬프트 앞 200자만 출력
+        # prompt 생성 시 이전 버전 데이터 전달
+        prompt = get_document_analysis_prompt(
+            job_title,
+            doc_type,
+            document_content,
+            job_competencies_list, # job_competencies를 여기서 전달
+            previous_document_content,
+            previous_feedback,
+            older_document_content,
+            older_feedback
+        )
+        print(f"Generated Prompt for {doc_type} (Job: {job_title}):\n{prompt[:500]}...") # 프롬프트 앞 500자만 출력
 
-        # prompts.py에서 오류 문자열이 반환된 경우, 바로 에러 응답 반환
         if prompt.startswith("오류:"):
             return JSONResponse(content={"error": prompt}, status_code=400)
 
-
         messages_for_ai = [
-            {"role": "system", "content": "You are a helpful AI assistant."},
+            {"role": "system", "content": "You are a helpful AI assistant who provides detailed feedback on job application documents."},
             {"role": "user", "content": prompt},
         ]
 
@@ -85,7 +97,6 @@ async def get_ai_feedback(job_title: str, doc_type: str, document_content: Dict[
 
         summary = response.choices[0].message.content.strip()
 
-        # AI가 '내용을 찾을 수 없다'고 응답했을 때의 처리
         if "찾을 수 없다" in summary or "유효한 포트폴리오 내용을 찾을 수 없" in summary or "unable to access external URLs" in summary:
              return JSONResponse(content={"error": summary}, status_code=400)
 
@@ -94,6 +105,18 @@ async def get_ai_feedback(job_title: str, doc_type: str, document_content: Dict[
     except Exception as e:
         print(traceback.format_exc())
         return JSONResponse(content={"error": f"AI 요약 오류: {e}"}, status_code=500)
+
+async def get_embedding(text: str) -> List[float]:
+    """
+    주어진 텍스트에 대한 임베딩 벡터를 생성합니다.
+    """
+    try:
+        text = text.replace("\n", " ")
+        response = client.embeddings.create(input=text, model=OPENAI_EMBEDDING_MODEL)
+        return response.data[0].embedding
+    except Exception as e:
+        print(f"Error generating embedding: {e}")
+        raise HTTPException(status_code=500, detail=f"Embedding generation failed: {e}")
 
 
 @app.get("/", response_class=HTMLResponse)
@@ -133,45 +156,9 @@ async def get_document_schema(doc_type: str, job_slug: str):
         raise HTTPException(status_code=404, detail="Document schema not found for this type or job.")
     return JSONResponse(content=schema)
 
-@app.post("/api/analyze_document/{doc_type}")
-async def analyze_document_endpoint(
-    doc_type: str, request_data: AnalyzeDocumentRequest
-):
-    try:
-        job_title = request_data.job_title
-        doc_content_dict = request_data.document_content
-        version = request_data.version # Get version from request
-
-        feedback_response = await get_ai_feedback(job_title, doc_type, doc_content_dict)
-        
-        # get_ai_feedback에서 에러가 발생하면 해당 에러 응답을 그대로 반환
-        if feedback_response.status_code != 200:
-            return feedback_response
-        
-        # 성공 시, feedback 내용을 추출하여 MongoDB에 저장
-        feedback_content = json.loads(feedback_response.body.decode('utf-8')).get("feedback", "")
-
-        # Save to MongoDB
-        collection = _get_collection(doc_type)
-        db_document = {
-            "job_title": job_title,
-            "doc_type": doc_type,
-            "version": version,
-            "content": doc_content_dict,
-            "feedback": feedback_content,
-            "created_at": mongo_client.server_info()["ok"] # Using server time as a placeholder for creation time if not available
-        }
-        collection.insert_one(db_document)
-        print(f"Document v{version} for {job_title} ({doc_type}) saved to MongoDB.")
-
-        return feedback_response # Return the original AI feedback response
-
-    except Exception as e:
-        print(f"Error in analyze_document_endpoint: {traceback.format_exc()}")
-        raise HTTPException(status_code=500, detail=f"Server error: {e}")
-
+# MongoDB에서 문서 불러오기 엔드포인트
 @app.get("/api/load_documents/{job_slug}", response_class=JSONResponse)
-async def load_documents_endpoint(job_slug: str):
+async def load_documents_endpoint(job_slug: str, db: AsyncIOMotorClient = Depends(get_database)):
     decoded_job_slug = unquote(job_slug)
     job_title = None
     for category_jobs in JOB_CATEGORIES.values():
@@ -182,34 +169,35 @@ async def load_documents_endpoint(job_slug: str):
                 break
         if job_title:
             break
-
+            
     if not job_title:
         raise HTTPException(status_code=404, detail=f"Job not found: {decoded_job_slug}")
 
     loaded_data = {
         "resume": [],
         "cover_letter": [],
-        "portfolio": [] # Portfolio is not managed in DB for now, keep empty
+        "portfolio": []
     }
 
     try:
-        # Load Resume documents
-        for doc in resume_collection.find({"job_title": job_title}).sort("version", 1):
-            doc.pop("_id") # Remove ObjectId for JSON serialization
+        resume_collection = db.get_collection("Resume")
+        async for doc in resume_collection.find({"job_title": job_title}).sort("version", 1):
+            doc.pop("_id")
             loaded_data["resume"].append(doc)
         
-        # Load Cover Letter documents
-        for doc in cover_letter_collection.find({"job_title": job_title}).sort("version", 1):
-            doc.pop("_id") # Remove ObjectId for JSON serialization
+        cover_letter_collection = db.get_collection("Cover_Letter")
+        async for doc in cover_letter_collection.find({"job_title": job_title}).sort("version", 1):
+            doc.pop("_id")
             loaded_data["cover_letter"].append(doc)
         
         return JSONResponse(content=loaded_data)
     except Exception as e:
-        print(f"Error loading documents from MongoDB: {traceback.format_exc()}")
+        print(traceback.format_exc())
         raise HTTPException(status_code=500, detail=f"Failed to load documents: {e}")
 
-@app.delete("/api/rollback_document/{doc_type}/{job_slug}/{version_to_rollback}")
-async def rollback_document_endpoint(doc_type: str, job_slug: str, version_to_rollback: int):
+# MongoDB에서 문서 삭제 (롤백) 엔드포인트
+@app.delete("/api/rollback_document/{doc_type}/{job_slug}/{version}", response_class=JSONResponse)
+async def rollback_document_endpoint(doc_type: str, job_slug: str, version: int, db: AsyncIOMotorClient = Depends(get_database)):
     decoded_job_slug = unquote(job_slug)
     job_title = None
     for category_jobs in JOB_CATEGORIES.values():
@@ -220,23 +208,121 @@ async def rollback_document_endpoint(doc_type: str, job_slug: str, version_to_ro
                 break
         if job_title:
             break
-
+    
     if not job_title:
         raise HTTPException(status_code=404, detail=f"Job not found: {decoded_job_slug}")
 
     try:
-        collection = _get_collection(doc_type)
-        # Delete documents with a version greater than the version_to_rollback
-        result = collection.delete_many({
-            "job_title": job_title,
-            "doc_type": doc_type,
-            "version": {"$gt": version_to_rollback}
-        })
-        print(f"Deleted {result.deleted_count} documents for {job_title} ({doc_type}) beyond version {version_to_rollback}.")
-        return JSONResponse(content={"message": f"Successfully rolled back {doc_type} to version {version_to_rollback}. {result.deleted_count} documents deleted."})
+        collection = None
+        if doc_type == "resume":
+            collection = db.get_collection("Resume")
+        elif doc_type == "cover_letter":
+            collection = db.get_collection("Cover_Letter")
+        else:
+            raise HTTPException(status_code=400, detail="Invalid document type for rollback.")
+        
+        delete_result = await collection.delete_many(
+            {"job_title": job_title, "version": {"$gt": version}}
+        )
+        
+        if delete_result.deleted_count > 0:
+            return JSONResponse(content={"message": f"{delete_result.deleted_count} documents rolled back successfully."})
+        else:
+            return JSONResponse(content={"message": "No documents found to rollback for the given version."}, status_code=200)
+
     except Exception as e:
-        print(f"Error during rollback: {traceback.format_exc()}")
+        print(traceback.format_exc())
         raise HTTPException(status_code=500, detail=f"Rollback failed: {e}")
+
+@app.post("/api/analyze_document/{doc_type}")
+async def analyze_document_endpoint(
+    doc_type: str, request_data: AnalyzeDocumentRequest, db: AsyncIOMotorClient = Depends(get_database)
+):
+    try:
+        job_title = request_data.job_title
+        doc_content_dict = request_data.document_content
+        new_version_number = request_data.version
+
+        # 이전 버전 문서 및 피드백 조회
+        previous_document_content = None
+        previous_feedback = None
+        older_document_content = None
+        older_feedback = None
+
+        collection = None
+        if doc_type == "resume":
+            collection = db.get_collection("Resume")
+        elif doc_type == "cover_letter":
+            collection = db.get_collection("Cover_Letter")
+        else:
+            raise HTTPException(status_code=400, detail="Invalid document type for analysis and saving.")
+
+        if new_version_number > 0:
+            previous_version_doc = await collection.find_one({
+                "job_title": job_title,
+                "doc_type": doc_type,
+                "version": new_version_number - 1
+            })
+            if previous_version_doc:
+                previous_document_content = previous_version_doc.get("content")
+                previous_feedback = previous_version_doc.get("feedback")
+
+        if new_version_number > 1:
+            older_version_doc = await collection.find_one({
+                "job_title": job_title,
+                "doc_type": doc_type,
+                "version": new_version_number - 2
+            })
+            if older_version_doc:
+                older_document_content = older_version_doc.get("content")
+                older_feedback = older_version_doc.get("feedback")
+
+        text_for_embedding = ""
+        if doc_type == "resume":
+            text_for_embedding = " ".join([f"{key}: {value}" for key, value in doc_content_dict.items()])
+        elif doc_type == "cover_letter":
+            motivation_expertise = doc_content_dict.get('motivation_expertise', '')
+            collaboration_experience = doc_content_dict.get('collaboration_experience', '')
+            text_for_embedding = f"지원동기 및 전문성: {motivation_expertise} 협업 경험: {collaboration_experience}"
+        else:
+            text_for_embedding = json.dumps(doc_content_dict, ensure_ascii=False)
+
+        embedding_vector = await get_embedding(text_for_embedding)
+
+        # AI 피드백 생성 시 이전 버전 데이터 전달
+        feedback_response = await get_ai_feedback(
+            job_title,
+            doc_type,
+            doc_content_dict,
+            previous_document_content=previous_document_content,
+            previous_feedback=previous_feedback,
+            older_document_content=older_document_content,
+            older_feedback=older_feedback
+        )
+        
+        if feedback_response.status_code != 200:
+            return feedback_response
+        
+        feedback_content = json.loads(feedback_response.body.decode('utf-8'))
+        ai_feedback = feedback_content.get("feedback")
+
+        doc_to_save = {
+            "job_title": job_title,
+            "doc_type": doc_type, 
+            "version": new_version_number,
+            "content": doc_content_dict,
+            "feedback": ai_feedback,
+            "embedding": embedding_vector
+        }
+
+        await collection.insert_one(doc_to_save)
+
+        return JSONResponse(content={"message": "Document analyzed and saved successfully!", "feedback": ai_feedback}, status_code=200)
+
+    except Exception as e:
+        print(f"Error in analyze_document_endpoint: {e}")
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Server error during analysis and saving: {e}")
 
 
 @app.post("/api/portfolio_summary")
@@ -302,32 +388,27 @@ async def portfolio_summary(
             status_code=400
         )
 
-    # 2. OpenAI로 요약 생성 (get_ai_feedback 함수를 통해)
     try:
-        # get_ai_feedback은 JSONResponse를 반환하므로, 이를 처리
+        # 포트폴리오 요약은 이전 버전 문서/피드백을 고려하지 않으므로, 이 인자들은 전달하지 않음
         ai_response = await get_ai_feedback(job_title, doc_type_for_prompt, prompt_content_for_ai)
         
-        # get_ai_feedback에서 에러가 발생하면 해당 에러 응답을 그대로 반환
         if ai_response.status_code != 200:
             return ai_response
         
-        # 성공 시, feedback 내용을 추출하여 summary 변수에 할당
         summary_content = json.loads(ai_response.body.decode('utf-8'))
         summary = summary_content.get("feedback", "")
 
-        if not summary: # 피드백 내용이 비어있으면 에러
+        if not summary:
             return JSONResponse(content={"error": "AI 요약 내용이 없습니다."}, status_code=500)
 
     except Exception as e:
         print(traceback.format_exc())
         return JSONResponse(content={"error": f"AI 요약 오류: {e}"}, status_code=500)
 
-    # 3. 요약 결과를 한 장짜리 PDF로 생성
     try:
         pdf = FPDF()
         pdf.add_page()
         font_path = os.path.join("static", "fonts", "NotoSansKR-Regular.ttf")
-        # 폰트 파일 존재 여부 확인
         if not os.path.exists(font_path):
             raise FileNotFoundError(f"폰트 파일을 찾을 수 없습니다: {font_path}. static/fonts/NotoSansKR-Regular.ttf 경로를 확인해주세요.")
 
@@ -342,7 +423,6 @@ async def portfolio_summary(
         print(traceback.format_exc())
         return JSONResponse(content={"error": f"PDF 생성 오류: {e}"}, status_code=500)
 
-    # 4. PDF 파일 반환
     return FileResponse(pdf_path, filename=f"portfolio_summary_{job_title}.pdf", media_type="application/pdf")
 
 

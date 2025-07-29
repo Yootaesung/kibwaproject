@@ -1,56 +1,90 @@
 <!DOCTYPE html>
 <html lang="ko">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>채용 서류 분석기 (직무 선택)</title>
-    <link rel="stylesheet" href="/static/style.css"> <style>
-        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #f4f7f6; color: #333; margin: 0; padding: 20px; text-align: center; }
-        .container { max-width: 900px; margin: 40px auto; background-color: #ffffff; border-radius: 12px; box-shadow: 0 6px 20px rgba(0, 0, 0, 0.08); padding: 30px; }
-        h1 { color: #2c3e50; margin-bottom: 30px; font-size: 2.2em; }
-        .job-category { margin-bottom: 25px; border-bottom: 2px solid #e0e0e0; padding-bottom: 15px; }
-        .job-category h2 { color: #34495e; font-size: 1.6em; text-align: left; margin-bottom: 15px; }
-        .job-list { display: flex; flex-wrap: wrap; gap: 10px; justify-content: flex-start; }
-        .job-button {
-            background-color: #3498db;
-            color: white;
-            padding: 12px 20px;
-            border: none;
-            border-radius: 8px;
-            cursor: pointer;
-            font-size: 1.1em;
-            transition: background-color 0.3s ease, transform 0.2s ease;
-            text-decoration: none; /* 링크이므로 밑줄 제거 */
-            display: inline-block;
-            text-align: center;
-        }
-        .job-button:hover {
-            background-color: #2980b9;
-            transform: translateY(-2px);
-        }
-        .job-button:active {
-            transform: translateY(0);
-        }
+    <link rel="stylesheet" href="/static/style.css" />
+    <style>
+      body {
+        font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+        background-color: #f4f7f6;
+        color: #333;
+        margin: 0;
+        padding: 20px;
+        text-align: center;
+      }
+      .container {
+        max-width: 900px;
+        margin: 40px auto;
+        background-color: #ffffff;
+        border-radius: 12px;
+        box-shadow: 0 6px 20px rgba(0, 0, 0, 0.08);
+        padding: 30px;
+      }
+      h1 {
+        color: #2c3e50;
+        margin-bottom: 30px;
+        font-size: 2.2em;
+      }
+      .job-category {
+        margin-bottom: 25px;
+        border-bottom: 2px solid #e0e0e0;
+        padding-bottom: 15px;
+      }
+      .job-category h2 {
+        color: #34495e;
+        font-size: 1.6em;
+        text-align: left;
+        margin-bottom: 15px;
+      }
+      .job-list {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+        justify-content: flex-start;
+      }
+      .job-button {
+        background-color: #3498db;
+        color: white;
+        padding: 12px 20px;
+        border: none;
+        border-radius: 8px;
+        cursor: pointer;
+        font-size: 1.1em;
+        transition: background-color 0.3s ease, transform 0.2s ease;
+        text-decoration: none; /* 링크이므로 밑줄 제거 */
+        display: inline-block;
+        text-align: center;
+      }
+      .job-button:hover {
+        background-color: #2980b9;
+        transform: translateY(-2px);
+      }
+      .job-button:active {
+        transform: translateY(0);
+      }
     </style>
-</head>
-<body>
+  </head>
+  <body>
     <div class="container">
-        <h1>✨ 직무별 채용 서류 합격 가능성 분석기 ✨</h1>
-        <p>분석을 원하는 직무를 선택해주세요.</p>
+      <h1>✨ 직무별 채용 서류 합격 가능성 분석기 ✨</h1>
+      <p>분석을 원하는 직무를 선택해주세요.</p>
 
-        {% for category, jobs in job_categories.items() %}
-            <div class="job-category">
-                <h2>{{ category }}</h2>
-                <div class="job-list">
-                    {% for job_title in jobs %}
-                        {% set job_slug = job_title.replace(" ", "-").replace("/", "-").lower() %}
-                        <a href="/editor/{{ job_slug }}" class="job-button">
-                            {{ job_title }}
-                        </a>
-                    {% endfor %}
-                </div>
-            </div>
-        {% endfor %}
+      {% for category, jobs in job_categories.items() %}
+      <div class="job-category">
+        <h2>{{ category }}</h2>
+        <div class="job-list">
+          {% for job_title in jobs %} {% set job_slug = job_title.replace(" ",
+          "-").replace("/", "-").lower() %}
+          <a href="/editor/{{ job_slug }}" class="job-button">
+            {{ job_title }}
+          </a>
+          {% endfor %}
+        </div>
+      </div>
+      {% endfor %}
     </div>
-</body>
+    z
+  </body>
 </html>
