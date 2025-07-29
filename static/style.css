@@ -185,16 +185,23 @@ h1 {
   border-radius: 10px;
   box-shadow: 0 5px 15px rgba(0, 0, 0, 0.3);
   width: 80%;
-  max-width: 700px;
+  max-width: 1000px; /* 오른쪽 섹션을 수용하기 위해 최대 너비 증가 */
   position: relative;
   animation: fadeIn 0.3s;
+  display: flex; /* 자식 요소들을 세로로 정렬 */
+  flex-direction: column;
+  gap: 20px; /* 모달 내 요소들 간 간격 */
 }
+
 .close-button {
   color: #aaa;
-  float: right;
+  float: right; /* h2와 같은 줄에 있다면 float를 사용하거나 flex로 재정렬 */
   font-size: 28px;
   font-weight: bold;
   cursor: pointer;
+  position: absolute; /* 모달 우측 상단에 고정 */
+  top: 15px;
+  right: 25px;
 }
 .close-button:hover,
 .close-button:focus {
@@ -203,7 +210,26 @@ h1 {
 }
 .modal-content h2 {
   color: #007bff;
-  margin-bottom: 20px;
+  margin-bottom: 0; /* 부모 gap 사용으로 마진 제거 */
+}
+
+/* 추가된 모달 본문 컨테이너 스타일 */
+.modal-body-container {
+  display: flex;
+  flex-direction: row; /* 폼과 피드백을 가로로 배치 */
+  gap: 30px; /* 폼과 피드백 영역 사이 간격 */
+  flex-grow: 1; /* 남은 공간을 채우도록 설정 */
+}
+
+#document-form {
+  flex: 2; /* 폼 영역이 피드백 영역보다 넓게 (예시 비율 2:1) */
+  display: flex;
+  flex-direction: column;
+  gap: 15px; /* 폼 내부 요소 간 간격 */
+}
+
+#form-fields {
+  flex-grow: 1; /* form-fields가 남은 공간을 차지하도록 */
 }
 
 .input-group label {
@@ -220,7 +246,7 @@ h1 {
   border-radius: 8px;
   box-sizing: border-box;
   font-size: 1em;
-  margin-bottom: 15px;
+  margin-bottom: 15px; /* input-group 내부 요소 간격으로 대체 가능 */
 }
 textarea {
   resize: vertical;
@@ -238,11 +264,30 @@ button[type="submit"],
   font-size: 1.1em;
   font-weight: bold;
   transition: background-color 0.3s ease;
-  margin-top: 15px;
+  margin-top: 15px; /* 폼 하단 버튼 여백 유지 */
 }
 button[type="submit"]:hover,
 #add-qa:hover {
   background-color: #218838;
+}
+
+.ai-feedback {
+  flex: 1; /* 피드백 영역 */
+  background-color: #e9f5e9;
+  border: 1px solid #d4edda;
+  border-radius: 8px;
+  padding: 15px;
+  color: #155724;
+  display: none; /* JavaScript에서 표시/숨김 처리 */
+  height: fit-content; /* 내용에 맞게 높이 조정 */
+  overflow-y: auto; /* 내용이 길어지면 스크롤바 생성 */
+  max-height: calc(100vh - 200px); /* 모달 높이에 따라 적절히 조절 */
+}
+
+.ai-feedback h3 {
+  color: #007bff;
+  margin-top: 0;
+  margin-bottom: 10px;
 }
 
 @keyframes fadeIn {
