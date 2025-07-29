@@ -186,8 +186,11 @@ JOB_DOCUMENT_SCHEMAS = {
     "cover_letter": { # 기존 자기소개서 스키마 유지 (필드명만 일관성 있게 수정)
         "korean_name": "자기소개서",
         "fields": [
-            {"name": "motivation_expertise", "label": "해당 직무의 지원동기와 전문성을 기르기 위해 노력한 경험", "type": "textarea", "placeholder": "내용을 입력하세요."},
-            {"name": "collaboration_experience", "label": "공동의 목표를 위해 협업을 한 경험", "type": "textarea", "placeholder": "내용을 입력하세요."}
+            {"name": "reason_for_application", "label": "해당 직무에 지원한 이유", "type": "textarea", "placeholder": "내용을 입력하세요."},
+            {"name": "expertise_experience", "label": "해당 분야에 대한 전문성을 기르기 위해 노력한 경험", "type": "textarea", "placeholder": "내용을 입력하세요."},
+            {"name": "collaboration_experience", "label": "공동의 목표를 위해 협업을 한 경험", "type": "textarea", "placeholder": "내용을 입력하세요."},
+            {"name": "challenging_goal_experience", "label": "도전적인 목표를 세우고 성취하기 위해 노력한 경험", "type": "textarea", "placeholder": "내용을 입력하세요."},
+            {"name": "growth_process", "label": "자신의 성장과정", "type": "textarea", "placeholder": "내용을 입력하세요."},
         ]
     },
     "portfolio": { # 기존 포트폴리오 스키마 유지

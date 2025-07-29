@@ -295,9 +295,20 @@ async def analyze_document_endpoint(
         if doc_type == "resume":
             text_for_embedding = " ".join([f"{key}: {value}" for key, value in doc_content_dict.items()])
         elif doc_type == "cover_letter":
-            motivation_expertise = doc_content_dict.get('motivation_expertise', '')
+            # 5가지 새로운 질문 필드를 모두 포함하도록 수정
+            reason_for_application = doc_content_dict.get('reason_for_application', '')
+            expertise_experience = doc_content_dict.get('expertise_experience', '')
             collaboration_experience = doc_content_dict.get('collaboration_experience', '')
-            text_for_embedding = f"지원동기 및 전문성: {motivation_expertise} 협업 경험: {collaboration_experience}"
+            challenging_goal_experience = doc_content_dict.get('challenging_goal_experience', '')
+            growth_process = doc_content_dict.get('growth_process', '')
+
+            text_for_embedding = (
+                f"지원 이유: {reason_for_application} "
+                f"전문성 경험: {expertise_experience} "
+                f"협업 경험: {collaboration_experience} "
+                f"도전적 목표 경험: {challenging_goal_experience} "
+                f"성장 과정: {growth_process}"
+            )
         else: # 포트폴리오 등 기타 문서
             text_for_embedding = json.dumps(doc_content_dict, ensure_ascii=False)
 

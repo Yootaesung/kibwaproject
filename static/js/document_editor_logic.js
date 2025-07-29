@@ -164,24 +164,68 @@ function renderFormFields(schema, currentContent) {
   } else if (docKoreanName === "자기소개서") {
     const qaContainer = document.createElement("div");
     qaContainer.id = "qa-container";
-    const motivationExpertise = currentContent.motivation_expertise || "";
-    const collaborationExperience =
-      currentContent.collaboration_experience || "";
 
+    // 5가지 새로운 질문에 대한 필드 렌더링
     qaContainer.innerHTML = `
             <div class="input-group">
-                <label>1. 해당 직무의 지원동기와 전문성을 기르기 위해 노력한 경험을 서술하시오.</label>
-                <textarea name="motivation_expertise" placeholder="내용을 입력하세요." style="width: 100%; min-height: 120px;">${motivationExpertise}</textarea>
+                <label>1. 해당 직무에 지원한 이유를 서술하시오.<span class="required">*</span></label>
+                <textarea name="reason_for_application" placeholder="내용을 입력하세요." style="width: 100%; min-height: 120px;" required>${
+                  currentContent.reason_for_application || ""
+                }</textarea>
                 <div class="char-counter" style="text-align: right; font-size: 0.9em; color: #666; margin-top: 3px;">
-                    글자수: <span class="char-count">${motivationExpertise.length}</span>
+                    글자수: <span class="char-count">${
+                      (currentContent.reason_for_application || "").length
+                    }</span>
                 </div>
+                <div class="error-message" style="color: red; font-size: 0.8em; display: none;">필수 입력 항목입니다.</div>
             </div>
             <div class="input-group" style="margin-top: 20px;">
-                <label>2. 공동의 목표를 위해 협업을 한 경험을 서술하시오.</label>
-                <textarea name="collaboration_experience" placeholder="내용을 입력하세요." style="width: 100%; min-height: 120px;">${collaborationExperience}</textarea>
+                <label>2. 해당 분야에 대한 전문성을 기르기 위해 노력한 경험을 서술하시오.<span class="required">*</span></label>
+                <textarea name="expertise_experience" placeholder="내용을 입력하세요." style="width: 100%; min-height: 120px;" required>${
+                  currentContent.expertise_experience || ""
+                }</textarea>
                 <div class="char-counter" style="text-align: right; font-size: 0.9em; color: #666; margin-top: 3px;">
-                    글자수: <span class="char-count">${collaborationExperience.length}</span>
+                    글자수: <span class="char-count">${
+                      (currentContent.expertise_experience || "").length
+                    }</span>
                 </div>
+                <div class="error-message" style="color: red; font-size: 0.8em; display: none;">필수 입력 항목입니다.</div>
+            </div>
+            <div class="input-group" style="margin-top: 20px;">
+                <label>3. 공동의 목표를 위해 협업을 한 경험을 서술하시오.<span class="required">*</span></label>
+                <textarea name="collaboration_experience" placeholder="내용을 입력하세요." style="width: 100%; min-height: 120px;" required>${
+                  currentContent.collaboration_experience || ""
+                }</textarea>
+                <div class="char-counter" style="text-align: right; font-size: 0.9em; color: #666; margin-top: 3px;">
+                    글자수: <span class="char-count">${
+                      (currentContent.collaboration_experience || "").length
+                    }</span>
+                </div>
+                <div class="error-message" style="color: red; font-size: 0.8em; display: none;">필수 입력 항목입니다.</div>
+            </div>
+            <div class="input-group" style="margin-top: 20px;">
+                <label>4. 도전적인 목표를 세우고 성취하기 위해 노력한 경험을 서술하시오.<span class="required">*</span></label>
+                <textarea name="challenging_goal_experience" placeholder="내용을 입력하세요." style="width: 100%; min-height: 120px;" required>${
+                  currentContent.challenging_goal_experience || ""
+                }</textarea>
+                <div class="char-counter" style="text-align: right; font-size: 0.9em; color: #666; margin-top: 3px;">
+                    글자수: <span class="char-count">${
+                      (currentContent.challenging_goal_experience || "").length
+                    }</span>
+                </div>
+                <div class="error-message" style="color: red; font-size: 0.8em; display: none;">필수 입력 항목입니다.</div>
+            </div>
+            <div class="input-group" style="margin-top: 20px;">
+                <label>5. 자신의 성장과정을 서술하시오.<span class="required">*</span></label>
+                <textarea name="growth_process" placeholder="내용을 입력하세요." style="width: 100%; min-height: 120px;" required>${
+                  currentContent.growth_process || ""
+                }</textarea>
+                <div class="char-counter" style="text-align: right; font-size: 0.9em; color: #666; margin-top: 3px;">
+                    글자수: <span class="char-count">${
+                      (currentContent.growth_process || "").length
+                    }</span>
+                </div>
+                <div class="error-message" style="color: red; font-size: 0.8em; display: none;">필수 입력 항목입니다.</div>
             </div>
         `;
     formFields.appendChild(qaContainer);
@@ -191,6 +235,12 @@ function renderFormFields(schema, currentContent) {
         textarea.nextElementSibling.querySelector(".char-count");
       textarea.addEventListener("input", () => {
         charCountSpan.textContent = textarea.value.length;
+        // 입력 시 에러 메시지 숨김
+        const errorMessageDiv =
+          textarea.parentElement.querySelector(".error-message");
+        if (errorMessageDiv) {
+          errorMessageDiv.style.display = "none";
+        }
       });
     });
     const submitBtn = document.querySelector(
@@ -217,6 +267,13 @@ function renderFormFields(schema, currentContent) {
 
         const label = document.createElement("label");
         label.textContent = field.label;
+        // field.required가 true면 * 추가
+        if (field.required) {
+          const requiredSpan = document.createElement("span");
+          requiredSpan.className = "required";
+          requiredSpan.textContent = "*";
+          label.appendChild(requiredSpan);
+        }
         div.appendChild(label);
 
         let inputElement;
@@ -241,35 +298,89 @@ function renderFormFields(schema, currentContent) {
         }
         inputElement.name = field.name;
         inputElement.id = field.name;
+        // field.required가 true면 required 속성 추가
+        if (field.required) {
+          inputElement.setAttribute("required", "true");
+        }
+        inputElement.addEventListener("input", () => {
+          // 입력 시 에러 메시지 숨김
+          const errorMessageDiv =
+            inputElement.parentElement.querySelector(".error-message");
+          if (errorMessageDiv) {
+            errorMessageDiv.style.display = "none";
+          }
+        });
 
         div.appendChild(inputElement);
+        // 에러 메시지 div 추가
+        const errorMessageDiv = document.createElement("div");
+        errorMessageDiv.className = "error-message";
+        errorMessageDiv.style.color = "red";
+        errorMessageDiv.style.fontSize = "0.8em";
+        errorMessageDiv.style.display = "none"; // 기본적으로 숨김
+        errorMessageDiv.textContent = "필수 입력 항목입니다.";
+        div.appendChild(errorMessageDiv);
+
         sectionDiv.appendChild(div);
       });
       formFields.appendChild(sectionDiv);
     });
   } else if (schema.fields) {
+    // schema에 'fields'만 있는 경우
     console.log("Rendering fields for general document type.");
     schema.fields.forEach((field) => {
       const div = document.createElement("div");
       div.className = "input-group";
+      let inputHtml = "";
       if (field.type === "textarea") {
-        div.innerHTML = `
-                                <label>${field.label}:</label>
-                                <textarea name="${field.name}" placeholder="${
+        inputHtml = `
+                    <label>${field.label}: ${
+          field.required ? '<span class="required">*</span>' : ""
+        }</label>
+                    <textarea name="${field.name}" placeholder="${
           field.placeholder || ""
-        }">${currentContent[field.name] || ""}</textarea>
-                            `;
-      } else if (field.type === "text") {
-        div.innerHTML = `
-                                <label>${field.label}:</label>
-                                <input type="text" name="${
-                                  field.name
-                                }" value="${
+        }" ${field.required ? "required" : ""}>${
           currentContent[field.name] || ""
-        }" placeholder="${field.placeholder || ""}">
-                            `;
+        }</textarea>
+                `;
+      } else if (field.type === "text") {
+        inputHtml = `
+                    <label>${field.label}: ${
+          field.required ? '<span class="required">*</span>' : ""
+        }</label>
+                    <input type="text" name="${field.name}" value="${
+          currentContent[field.name] || ""
+        }" placeholder="${field.placeholder || ""}" ${
+          field.required ? "required" : ""
+        }>
+                `;
       }
+      div.innerHTML = inputHtml;
+
+      // 에러 메시지 div 추가 (innerHTML 이후에 접근)
+      const errorMessageDiv = document.createElement("div");
+      errorMessageDiv.className = "error-message";
+      errorMessageDiv.style.color = "red";
+      errorMessageDiv.style.fontSize = "0.8em";
+      errorMessageDiv.style.display = "none";
+      errorMessageDiv.textContent = "필수 입력 항목입니다.";
+      div.appendChild(errorMessageDiv);
+
       formFields.appendChild(div);
+
+      // 동적으로 생성된 input/textarea에 input 이벤트 리스너 추가
+      const createdInput = div.querySelector(
+        `[name="${field.name}"][required]`
+      );
+      if (createdInput) {
+        createdInput.addEventListener("input", () => {
+          const errorMsgDiv =
+            createdInput.parentElement.querySelector(".error-message");
+          if (errorMsgDiv) {
+            errorMsgDiv.style.display = "none";
+          }
+        });
+      }
     });
   }
 
@@ -286,32 +397,48 @@ function renderFormFields(schema, currentContent) {
  */
 async function handleDocumentFormSubmit(e) {
   e.preventDefault();
+
   const formData = new FormData(documentForm);
   const docContent = {}; // 사용자가 현재 폼에서 입력한 내용
+  let isValid = true; // 유효성 검사 플래그
 
-  for (let [key, value] of formData.entries()) {
-    if (key !== "portfolio_pdf") {
-      docContent[key] = value;
+  // 기존 오류 메시지 모두 숨기기
+  document.querySelectorAll(".error-message").forEach((el) => {
+    el.style.display = "none";
+  });
+
+  // 모든 required 필드에 대한 유효성 검사
+  const requiredFields = formFields.querySelectorAll("[required]");
+  requiredFields.forEach((field) => {
+    if (field.value.trim() === "") {
+      isValid = false;
+      const errorMessageDiv =
+        field.parentElement.querySelector(".error-message");
+      if (errorMessageDiv) {
+        errorMessageDiv.style.display = "block";
+      }
+      // 첫 번째 빈 필드로 스크롤 이동 및 포커스
+      if (!document.querySelector(".error-message[style*='block']")) {
+        field.focus();
+        field.scrollIntoView({ behavior: "smooth", block: "center" });
+      }
     }
+    docContent[field.name] = field.value.trim(); // 일단 내용 저장 (유효성 검사 후 사용)
+  });
+
+  // 파일 입력 필드는 required 검사에서 제외하고 별도 처리
+  const fileInputs = formFields.querySelectorAll('input[type="file"]');
+  fileInputs.forEach((fileInput) => {
+    // 파일 입력은 FormData에 직접 추가되므로 docContent에는 포함시키지 않음
+    // 이 부분은 기존 로직과 동일하게 유지. 파일 유효성은 별도 로직 필요 시 추가
+  });
+
+  if (!isValid) {
+    alert("필수 입력 항목을 모두 채워주세요.");
+    return; // 유효성 검사 실패 시 함수 종료
   }
 
-  let hasMeaningfulContent = false;
-  for (const key in docContent) {
-    if (
-      docContent.hasOwnProperty(key) &&
-      docContent[key] &&
-      docContent[key].trim() !== ""
-    ) {
-      hasMeaningfulContent = true;
-      break;
-    }
-  }
-
-  if (!hasMeaningfulContent) {
-    alert("분석할 내용이 없습니다. 내용을 입력해주세요.");
-    return;
-  }
-
+  // 이하는 기존의 AI 분석 및 저장 로직
   try {
     // 1. 현재 편집 중인 문서 버전을 documentData에서 찾습니다.
     const currentDocInArray = documentData[currentDocType].find(
@@ -409,12 +536,24 @@ async function handlePortfolioFormSubmit(e) {
   const linkInput = document.querySelector('input[name="portfolio_link"]');
   const formData = new FormData();
   formData.append("job_title", jobTitle);
+
+  let hasPortfolioContent = false; // 포트폴리오 내용 존재 여부 플래그
+
   if (pdfInput.files.length > 0) {
     formData.append("portfolio_pdf", pdfInput.files[0]);
+    hasPortfolioContent = true;
   }
   if (linkInput.value.trim()) {
     formData.append("portfolio_link", linkInput.value.trim());
+    hasPortfolioContent = true;
   }
+
+  // 필수 입력 검사
+  if (!hasPortfolioContent) {
+    alert("포트폴리오 PDF 파일을 업로드하거나 링크를 입력하세요.");
+    return; // 내용이 없으면 제출 방지
+  }
+
   // 현재 입력된 링크 값도 documentData에 저장 (PDF는 직접 저장하지 않음)
   if (currentDocType && currentDocVersion !== undefined) {
     const versionToUpdate = documentData[currentDocType].find(
@@ -427,35 +566,31 @@ async function handlePortfolioFormSubmit(e) {
     }
   }
 
-  if (formData.has("portfolio_pdf") || formData.get("portfolio_link")) {
-    showLoading(true, "포트폴리오 요약 및 PDF 생성 중..."); // 로딩 표시
-    try {
-      const response = await fetch("/api/portfolio_summary", {
-        method: "POST",
-        body: formData,
-      });
-      showLoading(false); // 로딩 숨김
-      if (response.ok) {
-        const blob = await response.blob();
-        const url = window.URL.createObjectURL(blob);
-        const a = document.createElement("a");
-        a.href = url;
-        a.download = "portfolio_summary.pdf";
-        document.body.appendChild(a);
-        a.click();
-        a.remove();
-        window.URL.revokeObjectURL(url);
-        alert("요약 PDF가 다운로드되었습니다.");
-      } else {
-        const result = await response.json();
-        alert(result.error || "요약 실패");
-      }
-    } catch (err) {
-      showLoading(false); // 로딩 숨김
-      alert("서버 오류: " + err);
+  showLoading(true, "포트폴리오 요약 및 PDF 생성 중..."); // 로딩 표시
+  try {
+    const response = await fetch("/api/portfolio_summary", {
+      method: "POST",
+      body: formData,
+    });
+    showLoading(false); // 로딩 숨김
+    if (response.ok) {
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "portfolio_summary.pdf";
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.URL.revokeObjectURL(url);
+      alert("요약 PDF가 다운로드되었습니다.");
+    } else {
+      const result = await response.json();
+      alert(result.error || "요약 실패");
     }
-  } else {
-    alert("PDF 파일을 업로드하거나 링크를 입력하세요.");
+  } catch (err) {
+    showLoading(false); // 로딩 숨김
+    alert("서버 오류: " + err);
   }
 }
 
@@ -625,16 +760,33 @@ function saveCurrentFormContent() {
   if (versionToUpdate) {
     const docContent = {};
     if (currentDocType === "cover_letter") {
-      const motivationExpertise = document.querySelector(
-        'textarea[name="motivation_expertise"]'
+      // 5가지 새로운 질문 필드에서 값 가져오기
+      const reasonForApplication = document.querySelector(
+        'textarea[name="reason_for_application"]'
+      );
+      const expertiseExperience = document.querySelector(
+        'textarea[name="expertise_experience"]'
       );
       const collaborationExperience = document.querySelector(
         'textarea[name="collaboration_experience"]'
       );
-      if (motivationExpertise)
-        docContent.motivation_expertise = motivationExpertise.value;
+      const challengingGoalExperience = document.querySelector(
+        'textarea[name="challenging_goal_experience"]'
+      );
+      const growthProcess = document.querySelector(
+        'textarea[name="growth_process"]'
+      );
+
+      if (reasonForApplication)
+        docContent.reason_for_application = reasonForApplication.value;
+      if (expertiseExperience)
+        docContent.expertise_experience = expertiseExperience.value;
       if (collaborationExperience)
         docContent.collaboration_experience = collaborationExperience.value;
+      if (challengingGoalExperience)
+        docContent.challenging_goal_experience =
+          challengingGoalExperience.value;
+      if (growthProcess) docContent.growth_process = growthProcess.value;
     } else {
       const textareas = formFields.querySelectorAll("textarea");
       const inputs = formFields.querySelectorAll('input:not([type="file"])');
@@ -675,7 +827,7 @@ document.addEventListener("DOMContentLoaded", async () => {
             ? "이력서"
             : docType === "cover_letter"
             ? "자기소개서"
-            : "";
+            : "포트폴리오"; // Added portfolio to koreanName logic
         if (loadedDocs && loadedDocs.length > 0) {
           // If loaded docs do not start with version 0, prepend an empty v0 locally
           if (loadedDocs[0].version > 0) {
@@ -711,14 +863,10 @@ document.addEventListener("DOMContentLoaded", async () => {
       processLoadedDocs("resume", loadedData.resume);
       processLoadedDocs("cover_letter", loadedData.cover_letter);
 
-      // Initialize portfolio as it's not managed in DB for this task, always start with v0
-      documentData.portfolio.push({
-        version: 0,
-        content: {},
-        displayContent: "포트폴리오 (v0)",
-        koreanName: "포트폴리오",
-        feedback: "",
-      });
+      // Portfolio is now handled by processLoadedDocs if there's saved data,
+      // but if not, an empty v0 will be initialized.
+      // Remove the explicit push as processLoadedDocs handles it.
+      processLoadedDocs("portfolio", loadedData.portfolio);
     } else {
       console.error("Failed to load documents from DB:", await response.text());
       // Fallback to initial v0 for all if loading fails entirely
