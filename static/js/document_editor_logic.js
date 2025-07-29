@@ -14,6 +14,39 @@ const aiFeedbackArea = document.getElementById("ai-feedback-area");
 const documentForm = document.getElementById("document-form");
 const loadingOverlay = document.getElementById("loading-overlay");
 
+// Helper function for default documentData initialization
+function initializeDefaultDocumentData() {
+  documentData = {
+    resume: [
+      {
+        version: 0,
+        content: {},
+        displayContent: "이력서 (v0)",
+        koreanName: "이력서",
+        feedback: "",
+      },
+    ],
+    cover_letter: [
+      {
+        version: 0,
+        content: {},
+        displayContent: "자기소개서 (v0)",
+        koreanName: "자기소개서",
+        feedback: "",
+      },
+    ],
+    portfolio: [
+      {
+        version: 0,
+        content: {},
+        displayContent: "포트폴리오 (v0)",
+        koreanName: "포트폴리오",
+        feedback: "",
+      },
+    ],
+  };
+}
+
 // 2. 모든 함수 정의
 
 /**
@@ -52,6 +85,7 @@ function setupNodeClickEvents() {
         const formSchema = await fetch(
           `/api/document_schema/${currentDocType}?job_slug=${jobTitle
             .replace(/ /g, "-")
+            .replace(/\//g, "-")
             .toLowerCase()}`
         )
           .then((res) => {
@@ -220,18 +254,18 @@ function renderFormFields(schema, currentContent) {
       div.className = "input-group";
       if (field.type === "textarea") {
         div.innerHTML = `
-                        <label>${field.label}:</label>
-                        <textarea name="${field.name}" placeholder="${
+                            <label>${field.label}:</label>
+                            <textarea name="${field.name}" placeholder="${
           field.placeholder || ""
         }">${currentContent[field.name] || ""}</textarea>
-                `;
+                        `;
       } else if (field.type === "text") {
         div.innerHTML = `
-                        <label>${field.label}:</label>
-                        <input type="text" name="${field.name}" value="${
+                            <label>${field.label}:</label>
+                            <input type="text" name="${field.name}" value="${
           currentContent[field.name] || ""
         }" placeholder="${field.placeholder || ""}">
-                `;
+                        `;
       }
       formFields.appendChild(div);
     });
@@ -277,17 +311,22 @@ async function handleDocumentFormSubmit(e) {
   }
 
   try {
+    // Determine the new version number for this submission
+    const newVersionNumber = documentData[currentDocType].length;
+
     const analysisData = {
       job_title: jobTitle,
       document_content: docContent,
-      doc_type: currentDocType, // 추가: prompt 생성을 위해 doc_type 전달 (기존에도 있었지만 확실히 명시)
+      version: newVersionNumber, // Pass the new version number to the backend
     };
 
     showLoading(true, "AI 분석 중..."); // 로딩 오버레이 표시 (함수 사용)
 
     const response = await fetch(`/api/analyze_document/${currentDocType}`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+      },
       body: JSON.stringify(analysisData),
     });
     const result = await response.json();
@@ -295,30 +334,20 @@ async function handleDocumentFormSubmit(e) {
     showLoading(false); // 로딩 오버레이 숨김 (함수 사용)
 
     if (response.ok) {
-      // 1. 현재 편집 중인 버전 (currentDocVersion)의 content를 최신 내용으로 업데이트
-      // 이는 "v0에는 처음 쓴 내용이 그대로 저장되어있고" 또는 "수정한 내용과 v0에서의 피드백 내용이 v1에 남아있고"
-      // 와 같이, 사용자가 작업했던 '그' 노드의 내용을 유지하라는 요구사항을 충족합니다.
-      // currentDocVersion의 feedback은 변경하지 않습니다.
-      documentData[currentDocType][currentDocVersion].content = docContent;
-
-      // 2. 새로운 버전 번호 계산
-      const newVersionNumber = documentData[currentDocType].length; // 현재 배열 길이가 다음 버전 번호가 됨
-
-      // 3. 새로운 다이어그램 노드 생성 및 documentData에 추가
-      // 새로운 노드(예: v1)에는 '이전 노드의 내용'(즉, 방금 제출한 docContent)과 '새로운 피드백'을 저장합니다.
+      // Add the new version to documentData with the submitted content and received feedback
       documentData[currentDocType].push({
         version: newVersionNumber,
-        content: docContent, // 새로 생성되는 버전에는 방금 제출된 내용을 저장
+        content: docContent, // The newly submitted content
         displayContent: `${documentData[currentDocType][0].koreanName} (v${newVersionNumber})`,
         koreanName: documentData[currentDocType][0].koreanName,
-        feedback: result.feedback, // 새로 받은 AI 피드백
+        feedback: result.feedback, // Newly received AI feedback
       });
 
-      // 4. 현재 활성 버전을 새로 생성된 버전으로 업데이트
+      // Update current active version to the newly created one
       currentDocVersion = newVersionNumber;
       modalTitle.textContent = `${documentData[currentDocType][0].koreanName} 편집 (v${currentDocVersion})`;
 
-      // 5. AI 피드백 모달에 표시
+      // AI 피드백 모달에 표시
       aiFeedbackContent.textContent = result.feedback;
       aiFeedbackArea.style.display = "block";
 
@@ -363,7 +392,9 @@ async function handlePortfolioFormSubmit(e) {
       (d) => d.version === currentDocVersion
     );
     if (versionToUpdate) {
-      versionToUpdate.content = { portfolio_link: linkInput.value.trim() };
+      versionToUpdate.content = {
+        portfolio_link: linkInput.value.trim(),
+      };
     }
   }
 
@@ -462,7 +493,7 @@ function drawDiagram() {
 }
 
 // 문서 되돌리기 함수 (선택된 버전으로 되돌림)
-function rollbackDocument(docType, versionToRollback) {
+async function rollbackDocument(docType, versionToRollback) {
   const docName = documentData[docType][0]
     ? documentData[docType][0].koreanName
     : docType; // v0 노드의 한글 이름 사용
@@ -470,13 +501,37 @@ function rollbackDocument(docType, versionToRollback) {
   if (
     confirm(`${docName}를 v${versionToRollback} 버전으로 되돌리시겠습니까?`)
   ) {
-    // 해당 문서 타입의 배열을 versionToRollback (포함)까지만 남기고 모두 제거
-    // 예를 들어, v1 버튼을 눌렀으면 versionToRollback은 1이 되고, slice(0, 1 + 1) -> slice(0, 2)
-    // 이렇게 하면 v0와 v1만 남게 됩니다.
+    // 1. 클라이언트 측 documentData 업데이트 (버전 잘라내기)
     documentData[docType] = documentData[docType].slice(
       0,
       versionToRollback + 1
     );
+
+    // 2. 서버에 삭제 요청
+    showLoading(true, "데이터베이스 롤백 중...");
+    try {
+      const response = await fetch(
+        `/api/rollback_document/${docType}/${jobTitle
+          .replace(/ /g, "-")
+          .replace(/\//g, "-")
+          .toLowerCase()}/${versionToRollback}`,
+        {
+          method: "DELETE",
+        }
+      );
+      if (!response.ok) {
+        const errorResult = await response.json();
+        throw new Error(errorResult.detail || "서버 롤백 실패");
+      }
+      alert(`${docName}가 v${versionToRollback} 버전으로 되돌려졌습니다.`);
+    } catch (error) {
+      console.error("Rollback API error:", error);
+      alert(`롤백 중 오류가 발생했습니다: ${error.message}`);
+      // If DB rollback fails, client-side data might be inconsistent with DB.
+      // For robustness, could reload from DB here or prompt user.
+    } finally {
+      showLoading(false);
+    }
 
     currentDocVersion = versionToRollback; // 현재 활성 버전을 되돌린 버전으로 설정
 
@@ -504,7 +559,6 @@ function rollbackDocument(docType, versionToRollback) {
         alert("문서가 초기화되어 현재 편집 중인 내용이 없습니다.");
       }
     }
-    alert(`${docName}가 v${versionToRollback} 버전으로 되돌려졌습니다.`);
   }
 }
 
@@ -524,6 +578,8 @@ function showLoading(show, message = "처리 중...") {
 
 /**
  * 현재 폼 필드의 내용을 documentData에 임시 저장합니다.
+ * 이 함수는 모달이 닫힐 때, 사용자가 "저장 및 분석" 버튼을 누르지 않은 경우에도
+ * 현재 편집 중인 버전의 내용을 documentData에 반영하기 위해 사용됩니다.
  */
 function saveCurrentFormContent() {
   if (
@@ -566,39 +622,86 @@ function saveCurrentFormContent() {
 }
 
 // 3. 초기 로딩 시 데이터 설정 및 이벤트 리스너 설정
-document.addEventListener("DOMContentLoaded", () => {
+document.addEventListener("DOMContentLoaded", async () => {
   jobTitle = document.body.dataset.jobTitle;
+  const jobSlug = jobTitle.replace(/ /g, "-").replace(/\//g, "-").toLowerCase();
 
-  // 초기 documentData 설정 (v0)
-  documentData = {
-    resume: [
-      {
-        version: 0,
-        content: {},
-        displayContent: "이력서 (v0)",
-        koreanName: "이력서",
-        feedback: "",
-      },
-    ],
-    cover_letter: [
-      {
-        version: 0,
-        content: {},
-        displayContent: "자기소개서 (v0)",
-        koreanName: "자기소개서",
-        feedback: "",
-      },
-    ],
-    portfolio: [
-      {
+  try {
+    showLoading(true, "문서 데이터 로딩 중...");
+    const response = await fetch(`/api/load_documents/${jobSlug}`);
+    if (response.ok) {
+      const loadedData = await response.json();
+
+      // Initialize documentData structure
+      documentData = {
+        resume: [],
+        cover_letter: [],
+        portfolio: [],
+      };
+
+      // Helper to process loaded documents for a given document type
+      const processLoadedDocs = (docType, loadedDocs) => {
+        const koreanName =
+          docType === "resume"
+            ? "이력서"
+            : docType === "cover_letter"
+            ? "자기소개서"
+            : "";
+        if (loadedDocs && loadedDocs.length > 0) {
+          // If loaded docs do not start with version 0, prepend an empty v0 locally
+          if (loadedDocs[0].version > 0) {
+            documentData[docType].push({
+              version: 0,
+              content: {},
+              displayContent: `${koreanName} (v0)`,
+              koreanName: koreanName,
+              feedback: "",
+            });
+          }
+          // Append all loaded versions from DB
+          loadedDocs.forEach((doc) => {
+            documentData[docType].push({
+              ...doc, // spread operator to copy all properties
+              koreanName: koreanName, // ensure koreanName is set
+              displayContent: `${koreanName} (v${doc.version})`, // ensure displayContent is set
+            });
+          });
+        } else {
+          // If no documents loaded from DB, initialize with an empty v0
+          documentData[docType].push({
+            version: 0,
+            content: {},
+            displayContent: `${koreanName} (v0)`,
+            koreanName: koreanName,
+            feedback: "",
+          });
+        }
+      };
+
+      // Process resume and cover_letter data
+      processLoadedDocs("resume", loadedData.resume);
+      processLoadedDocs("cover_letter", loadedData.cover_letter);
+
+      // Initialize portfolio as it's not managed in DB for this task, always start with v0
+      documentData.portfolio.push({
         version: 0,
         content: {},
         displayContent: "포트폴리오 (v0)",
         koreanName: "포트폴리오",
         feedback: "",
-      },
-    ],
-  };
+      });
+    } else {
+      console.error("Failed to load documents from DB:", await response.text());
+      // Fallback to initial v0 for all if loading fails entirely
+      initializeDefaultDocumentData(); // This function already creates empty v0 for all types
+    }
+  } catch (error) {
+    console.error("Error fetching documents on load:", error);
+    // Fallback to initial v0 for all if fetching fails entirely
+    initializeDefaultDocumentData(); // This function already creates empty v0 for all types
+  } finally {
+    showLoading(false);
+  }
 
   drawDiagram(); // 초기 다이어그램 그리기
 

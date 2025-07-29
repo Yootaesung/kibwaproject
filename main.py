@@ -18,6 +18,7 @@ from PyPDF2 import PdfReader
 from fpdf import FPDF
 import tempfile
 from pydantic import BaseModel
+from pymongo import MongoClient # MongoDB 클라이언트 임포트
 
 load_dotenv()
 
@@ -30,11 +31,28 @@ app = FastAPI()
 app.mount("/static", StaticFiles(directory="static"), name="static")
 templates = Jinja2Templates(directory="templates")
 
+# MongoDB 설정
+MONGO_URI = "mongodb://13.125.60.100:27017/"
+mongo_client = MongoClient(MONGO_URI)
+db = mongo_client.kibwaproject
+cover_letter_collection = db.Cover_Letter
+resume_collection = db.Resume
+# user_documents_collection = db.user_documents # For a more generalized approach, could use one collection with doc_type field
+
+# Helper function to get the correct collection
+def _get_collection(doc_type: str):
+    if doc_type == "resume":
+        return resume_collection
+    elif doc_type == "cover_letter":
+        return cover_letter_collection
+    else:
+        raise HTTPException(status_code=400, detail="Unsupported document type for database operations.")
+
 # 이력서 분석 요청을 위한 Pydantic 모델 정의
 class AnalyzeDocumentRequest(BaseModel):
     job_title: str
     document_content: Dict[str, Any] # 클라이언트에서 넘어오는 JSON 객체를 받을 수 있도록 Dict[str, Any]로 명시
-    current_version: Optional[int] = None # 이 필드를 Optional로 변경하고 기본값을 None으로 설정
+    version: int # 클라이언트에서 넘어오는 버전 정보 추가
 
 async def get_ai_feedback(job_title: str, doc_type: str, document_content: Dict[str, Any]):
     """
@@ -122,14 +140,103 @@ async def analyze_document_endpoint(
     try:
         job_title = request_data.job_title
         doc_content_dict = request_data.document_content
-        
+        version = request_data.version # Get version from request
+
         feedback_response = await get_ai_feedback(job_title, doc_type, doc_content_dict)
         
-        # get_ai_feedback에서 반환된 JSONResponse를 그대로 반환
-        return feedback_response
+        # get_ai_feedback에서 에러가 발생하면 해당 에러 응답을 그대로 반환
+        if feedback_response.status_code != 200:
+            return feedback_response
+        
+        # 성공 시, feedback 내용을 추출하여 MongoDB에 저장
+        feedback_content = json.loads(feedback_response.body.decode('utf-8')).get("feedback", "")
+
+        # Save to MongoDB
+        collection = _get_collection(doc_type)
+        db_document = {
+            "job_title": job_title,
+            "doc_type": doc_type,
+            "version": version,
+            "content": doc_content_dict,
+            "feedback": feedback_content,
+            "created_at": mongo_client.server_info()["ok"] # Using server time as a placeholder for creation time if not available
+        }
+        collection.insert_one(db_document)
+        print(f"Document v{version} for {job_title} ({doc_type}) saved to MongoDB.")
+
+        return feedback_response # Return the original AI feedback response
+
     except Exception as e:
-        print(f"Error in analyze_document_endpoint: {e}")
+        print(f"Error in analyze_document_endpoint: {traceback.format_exc()}")
         raise HTTPException(status_code=500, detail=f"Server error: {e}")
+
+@app.get("/api/load_documents/{job_slug}", response_class=JSONResponse)
+async def load_documents_endpoint(job_slug: str):
+    decoded_job_slug = unquote(job_slug)
+    job_title = None
+    for category_jobs in JOB_CATEGORIES.values():
+        for j_title in category_jobs:
+            normalized_j_title_slug = j_title.replace(" ", "-").replace("/", "-").lower()
+            if normalized_j_title_slug == decoded_job_slug:
+                job_title = j_title
+                break
+        if job_title:
+            break
+
+    if not job_title:
+        raise HTTPException(status_code=404, detail=f"Job not found: {decoded_job_slug}")
+
+    loaded_data = {
+        "resume": [],
+        "cover_letter": [],
+        "portfolio": [] # Portfolio is not managed in DB for now, keep empty
+    }
+
+    try:
+        # Load Resume documents
+        for doc in resume_collection.find({"job_title": job_title}).sort("version", 1):
+            doc.pop("_id") # Remove ObjectId for JSON serialization
+            loaded_data["resume"].append(doc)
+        
+        # Load Cover Letter documents
+        for doc in cover_letter_collection.find({"job_title": job_title}).sort("version", 1):
+            doc.pop("_id") # Remove ObjectId for JSON serialization
+            loaded_data["cover_letter"].append(doc)
+        
+        return JSONResponse(content=loaded_data)
+    except Exception as e:
+        print(f"Error loading documents from MongoDB: {traceback.format_exc()}")
+        raise HTTPException(status_code=500, detail=f"Failed to load documents: {e}")
+
+@app.delete("/api/rollback_document/{doc_type}/{job_slug}/{version_to_rollback}")
+async def rollback_document_endpoint(doc_type: str, job_slug: str, version_to_rollback: int):
+    decoded_job_slug = unquote(job_slug)
+    job_title = None
+    for category_jobs in JOB_CATEGORIES.values():
+        for j_title in category_jobs:
+            normalized_j_title_slug = j_title.replace(" ", "-").replace("/", "-").lower()
+            if normalized_j_title_slug == decoded_job_slug:
+                job_title = j_title
+                break
+        if job_title:
+            break
+
+    if not job_title:
+        raise HTTPException(status_code=404, detail=f"Job not found: {decoded_job_slug}")
+
+    try:
+        collection = _get_collection(doc_type)
+        # Delete documents with a version greater than the version_to_rollback
+        result = collection.delete_many({
+            "job_title": job_title,
+            "doc_type": doc_type,
+            "version": {"$gt": version_to_rollback}
+        })
+        print(f"Deleted {result.deleted_count} documents for {job_title} ({doc_type}) beyond version {version_to_rollback}.")
+        return JSONResponse(content={"message": f"Successfully rolled back {doc_type} to version {version_to_rollback}. {result.deleted_count} documents deleted."})
+    except Exception as e:
+        print(f"Error during rollback: {traceback.format_exc()}")
+        raise HTTPException(status_code=500, detail=f"Rollback failed: {e}")
 
 
 @app.post("/api/portfolio_summary")

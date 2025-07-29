@@ -13,3 +13,5 @@ PyPDF2==3.0.1
 fpdf==1.7.2
 requests==2.31.0
 aiofiles==24.1.0
+pydantic==2.6.2
+pymongo==4.3.3
