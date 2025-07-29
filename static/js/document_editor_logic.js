@@ -254,18 +254,20 @@ function renderFormFields(schema, currentContent) {
       div.className = "input-group";
       if (field.type === "textarea") {
         div.innerHTML = `
-                            <label>${field.label}:</label>
-                            <textarea name="${field.name}" placeholder="${
+                                <label>${field.label}:</label>
+                                <textarea name="${field.name}" placeholder="${
           field.placeholder || ""
         }">${currentContent[field.name] || ""}</textarea>
-                        `;
+                            `;
       } else if (field.type === "text") {
         div.innerHTML = `
-                            <label>${field.label}:</label>
-                            <input type="text" name="${field.name}" value="${
+                                <label>${field.label}:</label>
+                                <input type="text" name="${
+                                  field.name
+                                }" value="${
           currentContent[field.name] || ""
         }" placeholder="${field.placeholder || ""}">
-                        `;
+                            `;
       }
       formFields.appendChild(div);
     });
@@ -311,43 +313,70 @@ async function handleDocumentFormSubmit(e) {
   }
 
   try {
-    // Determine the new version number for this submission
-    const newVersionNumber = documentData[currentDocType].length;
+    // 1. 현재 편집 중인 문서 버전을 documentData에서 찾습니다.
+    const currentDocInArray = documentData[currentDocType].find(
+      (doc) => doc.version === currentDocVersion
+    );
 
-    const analysisData = {
+    // ⭐️ 수정 시작: 백엔드 Pydantic 모델에 맞게 requestBody 구성 ⭐️
+    // 'version' 필드를 추가하고, 이전 버전 데이터 필드는 백엔드에서 직접 처리하도록 제거합니다.
+    const requestBody = {
       job_title: jobTitle,
-      document_content: docContent,
-      version: newVersionNumber, // Pass the new version number to the backend
+      document_content: docContent, // 현재 폼에서 입력된 내용
+      version: currentDocVersion, // 이 필드가 '422 Unprocessable Entity' 오류의 주된 원인이었습니다.
     };
+    // ⭐️ 수정 끝 ⭐️
 
-    showLoading(true, "AI 분석 중..."); // 로딩 오버레이 표시 (함수 사용)
+    showLoading(true, "AI 분석 중..."); // 로딩 오버레이 표시
 
     const response = await fetch(`/api/analyze_document/${currentDocType}`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
       },
-      body: JSON.stringify(analysisData),
+      body: JSON.stringify(requestBody),
     });
     const result = await response.json();
 
-    showLoading(false); // 로딩 오버레이 숨김 (함수 사용)
+    showLoading(false); // 로딩 오버레이 숨김
 
     if (response.ok) {
-      // Add the new version to documentData with the submitted content and received feedback
-      documentData[currentDocType].push({
-        version: newVersionNumber,
-        content: docContent, // The newly submitted content
-        displayContent: `${documentData[currentDocType][0].koreanName} (v${newVersionNumber})`,
-        koreanName: documentData[currentDocType][0].koreanName,
-        feedback: result.feedback, // Newly received AI feedback
-      });
+      // 2. 현재 버전 (vN)의 content와 feedback을 업데이트합니다.
+      if (currentDocInArray) {
+        currentDocInArray.content = docContent; // 현재 폼 내용으로 업데이트
+        currentDocInArray.feedback = result.feedback; // 새로 받은 AI 피드백으로 업데이트
+      }
 
-      // Update current active version to the newly created one
-      currentDocVersion = newVersionNumber;
-      modalTitle.textContent = `${documentData[currentDocType][0].koreanName} 편집 (v${currentDocVersion})`;
+      // 3. 만약 현재 편집 중인 버전이 가장 최신 버전이 아니라면, 그 이후의 버전을 잘라냅니다.
+      // (예: v0을 편집하고 저장하면, v1, v2...가 있었다면 모두 제거하고 v0에서 새로운 브랜치 시작)
+      if (currentDocVersion < documentData[currentDocType].length - 1) {
+        documentData[currentDocType] = documentData[currentDocType].slice(
+          0,
+          currentDocVersion + 1
+        );
+      }
 
-      // AI 피드백 모달에 표시
+      // 4. 새로운 버전 (vN+1)의 번호를 결정합니다. (배열의 현재 길이)
+      const newVersionNumberForPush = documentData[currentDocType].length;
+
+      // 5. 새로 생성될 버전 (vN+1) 객체를 정의합니다.
+      // 이 객체는 현재 업데이트된 vN의 내용과 피드백을 복사합니다.
+      const newDocForNextVersion = {
+        version: newVersionNumberForPush,
+        content: { ...currentDocInArray.content }, // 업데이트된 vN의 content 복사
+        displayContent: `${currentDocInArray.koreanName} (v${newVersionNumberForPush})`,
+        koreanName: currentDocInArray.koreanName,
+        feedback: currentDocInArray.feedback, // 업데이트된 vN의 feedback 복사
+      };
+
+      // 6. 새로운 버전을 documentData 배열에 추가합니다.
+      documentData[currentDocType].push(newDocForNextVersion);
+
+      // 7. 현재 활성 버전을 새로 생성된 vN+1로 업데이트합니다.
+      currentDocVersion = newVersionNumberForPush;
+
+      // UI 업데이트
+      modalTitle.textContent = `${currentDocInArray.koreanName} 편집 (v${currentDocVersion})`;
       aiFeedbackContent.textContent = result.feedback;
       aiFeedbackArea.style.display = "block";
 
