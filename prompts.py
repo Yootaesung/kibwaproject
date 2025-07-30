@@ -1,16 +1,15 @@
 # prompts.py
 from typing import Dict, Any, Optional
-# from job_data import JOB_DETAILS # JOB_DETAILS는 get_document_analysis_prompt 내부에서 직접 사용되지 않으므로 제거
 
 def get_document_analysis_prompt(
     job_title: str,
     doc_type: str,
     document_content: Dict[str, Any],
-    job_competencies: Optional[list[str]] = None, # 이 인자는 main.py에서 JOB_DETAILS 기반으로 채워져서 넘어옴
-    previous_document_content: Optional[Dict[str, Any]] = None, # 이전 버전 문서 내용
-    previous_feedback: Optional[str] = None, # 이전 버전 피드백
-    older_document_content: Optional[Dict[str, Any]] = None, # 그 이전 버전 문서 내용 (vN-2)
-    older_feedback: Optional[str] = None # 그 이전 버전 피드백 (vN-2)
+    job_competencies: Optional[list[str]] = None,
+    previous_document_content: Optional[Dict[str, Any]] = None,
+    previous_feedback: Optional[str] = None,
+    older_document_content: Optional[Dict[str, Any]] = None,
+    older_feedback: Optional[str] = None
 ) -> str:
     """
     OpenAI AI 모델에 전달할 문서 분석 프롬프트를 생성합니다.
@@ -43,7 +42,7 @@ def get_document_analysis_prompt(
     # 문서 내용 및 피드백 지시
     user_prompt_parts.append("\n--- 현재 문서 내용 (최신 버전) ---")
     
-    # Modified history_context formatting for cover_letter
+    # history_context 형식 지정 함수
     def format_doc_content_for_history(content: Dict[str, Any], d_type: str) -> str:
         if d_type == "cover_letter":
             # 자기소개서 질문 필드 정의
@@ -60,7 +59,23 @@ def get_document_analysis_prompt(
                 formatted_parts.append(f"{label}: {content_text}")
             return "\n".join(formatted_parts)
         elif d_type == "resume":
-            return "\n".join([f"{k}: {v}" for k, v in content.items()])
+            # 이력서 항목명 매핑 (uiHandler.js의 qaLabels와 일관성 유지)
+            # ⭐️ 개인 정보 필드는 제거하고 핵심 피드백 대상 필드만 포함 ⭐️
+            resume_fields_map = {
+                "education_history": "학력",
+                "career_history": "경력",
+                "certifications": "보유 자격증",
+                "awards_activities": "수상 내역 및 대외활동",
+                "skills_tech": "보유 기술 스택",
+                # 기타 이력서 필드 중 피드백이 필요하면 여기에 추가
+            }
+            formatted_parts = []
+            for field_name, label in resume_fields_map.items():
+                content_text = content.get(field_name, "").strip()
+                # 내용이 없으면 '작성되지 않음' 또는 '누락'으로 표시
+                display_content = content_text if content_text else "작성되지 않음 (누락)"
+                formatted_parts.append(f"{label} ({field_name}): {display_content}")
+            return "\n".join(formatted_parts)
         else: # For portfolio etc.
             return str(content) # Fallback for other dict types
 
@@ -106,10 +121,19 @@ def get_document_analysis_prompt(
         user_prompt_parts.append(f"""
 - **지원자가 제공한 내용만을 기반으로 구체적인 피드백을 제공해주세요.**
 - 현재 이력서 내용과 {job_title} 직무의 필수 역량 및 자격증 정보(기술 스택 포함)를 바탕으로 합격 가능성을 높일 수 있는 구체적인 피드백을 제공해주세요.
-- **만약 특정 항목의 내용이 '없음'으로 기재되어 있거나 비어있는 경우, 그 내용을 그대로 인지하고 '해당 정보가 누락되어 있다'고 명확히 언급한 후, 어떤 내용을 채워야 할지 구체적인 가이드라인을 제시해주세요. 존재하지 않는 내용을 상상하여 기재하지 마세요.**
+- **만약 특정 항목의 내용이 '작성되지 않음 (누락)'으로 기재되어 있거나 비어있는 경우, 그 내용을 그대로 인지하고 '해당 정보가 누락되어 있습니다.'라고 명확히 언급한 후, 어떤 내용을 채워야 할지 구체적인 가이드라인을 제시해주세요. 존재하지 않는 내용을 상상하여 기재하지 마세요.**
 - 이력서 내용이 직무에 얼마나 적합하고 어필되는지 분석해주세요.
-- 각 섹션(학력, 경력, 자격증 등)의 내용이 얼마나 잘 구성되어 있는지 평가해주세요.
-- 전체적인 피드백은 'overall_feedback'에 담고, 각 섹션(예: 'education_history', 'career_history', 'certificates_list', 'awards_activities', 'skills_tech')에 대한 피드백은 'individual_feedbacks' 객체 안에 해당 섹션 이름을 키로 사용하여 구체적으로 작성해주세요.
+- 각 섹션의 내용이 얼마나 잘 구성되어 있는지 평가해주세요.
+- 전체적인 피드백은 'overall_feedback'에 담고, 각 섹션(예: 'education_history', 'career_history', 'certifications', 'awards_activities', 'skills_tech')에 대한 피드백은 'individual_feedbacks' 객체 안에 해당 섹션 이름을 키로 사용하여 **간결하게 1~2문장으로** 작성해주세요.
+- **개인 정보 (이름, 이메일, 연락처 등)는 피드백 대상에서 제외하고 언급하지 마세요.**
+
+다음 항목들에 대해 집중적으로 피드백해주세요:
+- **education_history (학력):** 학력 정보의 명확성, 직무 관련성, 중요 학업 경험 강조 여부.
+- **career_history (경력):** 경력의 구체성, 성과 중심 서술 (수치 포함), 직무 연관성, 역할 및 책임 명확성.
+- **certifications (보유 자격증):** 직무 관련 자격증 유무, 중요도, 취득일 명확성, 강점 부각 여부.
+- **awards_activities (수상 내역 및 대외활동):** 수상 및 활동 내용의 중요성, 직무 관련성, 기여도 명확성, 배우고 느낀 점 어필 여부.
+- **skills_tech (보유 기술 스택):** 기술 스택의 적절성, 구체성 (버전, 숙련도), 직무 요구사항 부합 여부, 프로젝트 활용 경험.
+
 """)
         if job_competencies:
             user_prompt_parts.append(f"- 지원자가 제시한 기술 스택({', '.join(job_competencies)})과 이력서 내용이 얼마나 잘 부합하는지 평가하고, 부족한 부분이 있다면 보완 방안을 제시해주세요.")
@@ -133,20 +157,19 @@ def get_document_analysis_prompt(
 """)
         for q_info in questions_info:
             user_prompt_parts.append(f"- **{q_info['label']} (`{q_info['name']}`):**")
-            user_prompt_parts.append(f"  - 직무 이해도, 직무 적합성, 회사/산업군 관심, 기여 의지 및 성장 가능성 등을 고려하여 평가합니다.")
-            user_prompt_parts.append(f"  - 자기 주도성, 학습 능력, 지속적인 성장 의지, 실제 적용 능력, 문제 해결 능력 및 성과 등을 고려하여 평가합니다.")
-            user_prompt_parts.append(f"  - 팀워크, 협업 능력, 책임감, 갈등 관리 및 조율 능력, 타인에 대한 이해 및 존중 등을 고려하여 평가합니다.")
-            user_prompt_parts.append(f"  - 목표 설정 능력, 실행력, 추진력, 문제 해결 능력, 회복 탄력성 및 학습 능력 등을 고려하여 평가합니다.")
-            user_prompt_parts.append(f"  - 가치관, 인성, 핵심 역량 형성 과정, 자기 성찰 및 발전 의지, 인생의 전환점 및 중요한 경험 등을 고려하여 평가합니다.")
-            user_prompt_parts.append(f"  - 구체적인 예시와 함께 개선 방안을 제안해주세요.")
+            user_prompt_parts.append(f"  - 직무 이해도, 직무 적합성, 회사/산업군 관심, 기여 의지 및 성장 가능성 등을 고려하여 평가합니다.")
+            user_prompt_parts.append(f"  - 자기 주도성, 학습 능력, 지속적인 성장 의지, 실제 적용 능력, 문제 해결 능력 및 성과 등을 고려하여 평가합니다.")
+            user_prompt_parts.append(f"  - 팀워크, 협업 능력, 책임감, 갈등 관리 및 조율 능력, 타인에 대한 이해 및 존중 등을 고려하여 평가합니다.")
+            user_prompt_parts.append(f"  - 목표 설정 능력, 실행력, 추진력, 문제 해결 능력, 회복 탄력성 및 학습 능력 등을 고려하여 평가합니다.")
+            user_prompt_parts.append(f"  - 가치관, 인성, 핵심 역량 형성 과정, 자기 성찰 및 발전 의지, 인생의 전환점 및 중요한 경험 등을 고려하여 평가합니다.")
+            user_prompt_parts.append(f"  - 구체적인 예시와 함께 개선 방안을 제안해주세요.")
 
         user_prompt_parts.append("""
 - 문맥에 맞지 않거나 모호한 부분이 있다면 구체적으로 제시해주세요.
 - 전체적인 일관성과 논리적 흐름에 대한 피드백을 추가해주세요.
 - 답변의 내용이 질문의 의도와 얼마나 부합하는지 평가해주세요.
 """)
-    elif doc_type == "portfolio": # 기존 포트폴리오 피드백 로직 유지, JSON 요청 추가
-        # For portfolio, individual_feedbacks can be an empty object {} or contain relevant specific points if applicable.
+    elif doc_type == "portfolio":
         content_str = "\n".join([f"{key}: {v}" for key, v in document_content.items()])
         user_prompt_parts.append(f"""
 --- 포트폴리오 분석 ---
@@ -157,7 +180,7 @@ def get_document_analysis_prompt(
 - {job_title} 직무 관점에서 포트폴리오의 각 프로젝트 설명이 직무 역량과 연결되어 얼마나 잘 어필되는지 분석하고, 프로젝트의 기여도, 기술 스택, 결과물을 더 효과적으로 제시하기 위한 구체적인 개선 방안을 제시해주세요. 링크 첨부의 중요성도 언급해주세요.
 - 전체적인 피드백은 'overall_feedback'에 담아주세요. 'individual_feedbacks'는 비어있는 객체 {{}}로 반환하거나, 프로젝트별/섹션별 핵심 피드백이 있다면 해당 키로 넣어주세요.
 """)
-    elif doc_type == "portfolio_summary_url": # 기존 포트폴리오 요약 로직 유지, JSON 요청 추가
+    elif doc_type == "portfolio_summary_url":
         portfolio_url = document_content.get("portfolio_url", "")
         if not portfolio_url:
             return "오류: 포트폴리오 URL이 제공되지 않았습니다."
@@ -172,7 +195,7 @@ URL: {portfolio_url}
 - 해당 직무와의 연관성을 고려해주세요.
 - 전체 요약 내용은 'overall_feedback'에 담아주세요. 'individual_feedbacks'는 비어있는 객체 {{}}로 반환해주세요. (AI는 실제 URL에 접근할 수 없으므로, 일반적인 포트폴리오 분석 기준에 따라 요약합니다.)
 """)
-    elif doc_type == "portfolio_summary_text": # 기존 포트폴리오 요약 로직 유지, JSON 요청 추가
+    elif doc_type == "portfolio_summary_text":
         extracted_text = document_content.get("extracted_text", "")
         if not extracted_text:
             return "오류: 추출된 텍스트가 제공되지 않았습니다."

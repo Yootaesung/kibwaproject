@@ -107,16 +107,19 @@ export function setAiFeedback(
       challenging_goal_experience: "도전적 목표 달성 경험",
       growth_process: "성장 과정",
       // 이력서 항목 (예시 - 실제 스키마에 따라 추가)
+      education_history: "학력", // '경력*' 대신 '학력'이 더 적절해 보입니다.
+      career_history: "경력", // '경력*'에서 * 제거
+      certifications: "보유 자격증", // '보유 자격증'에 해당하는 필드명 (가정)
+      awards_activities: "수상 내역 및 대외활동", // '수상 내역 및 대외활동'에 해당하는 필드명 (가정)
+      skills_tech: "보유 기술 스택", // '보유 기술 스택*'에서 * 제거
+      // ... (기존에 정의된 다른 이력서 필드명들이 있다면 여기에 추가)
       name: "이름",
       email: "이메일",
       phone: "연락처",
       career_summary: "경력 요약",
-      education: "학력",
-      experience: "경력",
-      skills: "보유 기술",
+      experience: "경력", // career_history와 역할이 겹칠 수 있으니 실제 스키마 확인 필요
+      skills: "보유 기술", // skills_tech와 역할이 겹칠 수 있으니 실제 스키마 확인 필요
       projects: "프로젝트",
-      certifications: "자격증",
-      awards: "수상 경력",
       languages: "어학 능력",
       // ... job_data.py의 스키마에 정의된 모든 필드명 추가
     };
