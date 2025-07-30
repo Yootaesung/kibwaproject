@@ -37,6 +37,7 @@ export function setupNodeClickEvents() {
       const clickedNode = e.target.closest(".document-node");
       const docType = clickedNode.dataset.docType;
       const version = parseInt(clickedNode.dataset.version, 10);
+
       setCurrentDocInfo(docType, version);
 
       const currentDocKoreanName = clickedNode.dataset.koreanName;
@@ -44,7 +45,8 @@ export function setupNodeClickEvents() {
       // 팝업을 열 때 해당 버전의 데이터를 불러옴
       const versionData = getDocumentVersionData(docType, version);
       const docContent = versionData.content;
-      const savedFeedback = versionData.feedback; // 이전 버전의 피드백
+      const savedFeedback = versionData.feedback; // 이전 버전의 전체 피드백
+      const individualFeedbacks = versionData.individual_feedbacks || {}; // ⭐️ 추가: 이전 버전의 개별 피드백
 
       try {
         showLoading(true, "문서 스키마 로딩 중...");
@@ -76,9 +78,12 @@ export function setupNodeClickEvents() {
 
         renderFormFields(formSchema, docContent); // 불러온 데이터로 폼 필드 렌더링
 
+        // ⭐️ openEditModal 호출 시 개별 피드백과 문서 타입도 함께 전달
         openEditModal(
           `${currentDocKoreanName} 편집 (v${currentDocVersion})`,
-          savedFeedback
+          savedFeedback,
+          individualFeedbacks, // ⭐️ 개별 피드백 전달
+          docType // ⭐️ 문서 타입 전달
         );
       } catch (error) {
         console.error("An error occurred during node click event:", error);
@@ -208,7 +213,12 @@ export async function rollbackDocument(docType, versionToRollback) {
           .catch((error) =>
             console.error("Error fetching schema on rollback:", error)
           );
-        setAiFeedback(versionData.feedback || "");
+        // ⭐️ setAiFeedback 호출 시 개별 피드백과 문서 타입도 함께 전달
+        setAiFeedback(
+          versionData.feedback || "",
+          versionData.individual_feedbacks || {}, // ⭐️ 개별 피드백 전달
+          docType // ⭐️ 문서 타입 전달
+        );
         setModalTitle(
           `${versionData.koreanName} 편집 (v${versionData.version})`
         );

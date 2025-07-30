@@ -11,7 +11,7 @@ import traceback
 from urllib.parse import unquote
 
 from job_data import JOB_CATEGORIES, JOB_DETAILS, get_job_document_schema
-from prompts import get_document_analysis_prompt
+from prompts import get_document_analysis_prompt # 수정된 get_document_analysis_prompt 임포트
 from openai import OpenAI
 from dotenv import load_dotenv
 from PyPDF2 import PdfReader
@@ -49,6 +49,7 @@ class SaveDocumentRequest(BaseModel):
     version: int
     content: Dict[str, Any]
     feedback: str
+    individual_feedbacks: Dict[str, str] = {} # 개별 피드백 필드 추가
 
 async def get_ai_feedback(
     job_title: str,
@@ -62,13 +63,12 @@ async def get_ai_feedback(
 ):
     """
     OpenAI GPT 모델을 호출하여 문서 분석 피드백을 생성합니다.
-    이전 버전의 문서 내용과 피드백을 참고하여 더 정밀한 피드백을 제공합니다.
+    이 함수는 이제 JSON 응답을 기대하며, overall_feedback과 individual_feedbacks를 반환합니다.
     """
     try:
         job_detail = JOB_DETAILS.get(job_title)
         job_competencies_list = job_detail.get("competencies") if job_detail else None
 
-        # prompt 생성 시 이전 버전 데이터 전달
         prompt = get_document_analysis_prompt(
             job_title,
             doc_type,
@@ -79,27 +79,53 @@ async def get_ai_feedback(
             older_document_content,
             older_feedback
         )
-        print(f"Generated Prompt for {doc_type} (Job: {job_title}):\n{prompt[:500]}...") # 프롬프트 앞 500자만 출력
+        print(f"Generated Prompt for {doc_type} (Job: {job_title}):\n{prompt[:500]}...")
 
         if prompt.startswith("오류:"):
+            # 프롬프트 생성 자체에 오류가 있다면 JSON으로 반환
             return JSONResponse(content={"error": prompt}, status_code=400)
 
         messages_for_ai = [
-            {"role": "system", "content": "You are a helpful AI assistant who provides detailed feedback on job application documents."},
+            {"role": "system", "content": "You are a helpful AI assistant who provides detailed feedback on job application documents. Always respond in the specified JSON format."},
             {"role": "user", "content": prompt},
         ]
 
         response = client.chat.completions.create(
             model=OPENAI_MODEL,
-            messages=messages_for_ai
+            messages=messages_for_ai,
+            response_format={"type": "json_object"} # JSON 응답을 명시적으로 요청
         )
 
-        summary = response.choices[0].message.content.strip()
+        ai_raw_response = response.choices[0].message.content.strip()
+        print(f"Raw AI Response: {ai_raw_response}")
 
-        if "찾을 수 없다" in summary or "유효한 포트폴리오 내용을 찾을 수 없" in summary or "unable to access external URLs" in summary:
-             return JSONResponse(content={"error": summary}, status_code=400)
+        try:
+            # AI 응답이 JSON 형식이 아닐 경우를 대비한 처리
+            parsed_feedback = json.loads(ai_raw_response)
+        except json.JSONDecodeError:
+            print(f"AI response was not valid JSON: {ai_raw_response}")
+            # 유효한 JSON이 아니면 전체 응답을 overall_feedback으로 간주하고 individual_feedbacks는 비워둠
+            return JSONResponse(
+                content={
+                    "overall_feedback": f"AI 응답 파싱 오류: 유효한 JSON 형식이 아닙니다. 원본: {ai_raw_response[:200]}...",
+                    "individual_feedbacks": {}
+                }, 
+                status_code=500
+            )
 
-        return JSONResponse(content={"feedback": summary}, status_code=200)
+        # 필요한 키들이 있는지 확인
+        overall_feedback = parsed_feedback.get("overall_feedback", "AI 피드백을 생성하는 데 문제가 발생했습니다.")
+        individual_feedbacks = parsed_feedback.get("individual_feedbacks", {})
+
+        # 특정 오류 메시지가 포함된 경우 (포트폴리오 요약 등)
+        if "찾을 수 없다" in overall_feedback or "유효한 포트폴리오 내용을 찾을 수 없" in overall_feedback or "unable to access external URLs" in overall_feedback:
+            return JSONResponse(content={"error": overall_feedback}, status_code=400)
+
+        # 이제 overall_feedback과 individual_feedbacks를 함께 반환
+        return JSONResponse(content={
+            "overall_feedback": overall_feedback,
+            "individual_feedbacks": individual_feedbacks
+        }, status_code=200)
 
     except Exception as e:
         print(traceback.format_exc())
@@ -160,7 +186,7 @@ async def get_document_schema(doc_type: str, job_slug: str):
                 break
         if job_title:
             break
-    
+            
     if not job_title:
         raise HTTPException(status_code=404, detail="Job not found")
 
@@ -194,6 +220,9 @@ async def load_documents_from_file_system(job_slug: str) -> Dict[str, List[Dict[
                             content = await f.read()
                             try:
                                 doc_data = json.loads(content)
+                                # individual_feedbacks 필드가 없으면 빈 객체로 초기화
+                                if "individual_feedbacks" not in doc_data:
+                                    doc_data["individual_feedbacks"] = {}
                                 versions.append(doc_data)
                             except json.JSONDecodeError:
                                 print(f"Error decoding JSON from {filename}")
@@ -251,9 +280,42 @@ async def load_documents_endpoint(job_slug: str):
     return JSONResponse(content=loaded_data)
 
 
-# MongoDB에서 문서 삭제 (롤백) 엔드포인트는 제거됨
-# @app.delete("/api/rollback_document/{doc_type}/{job_slug}/{version}", response_class=JSONResponse)
-# async def rollback_document_endpoint(...) # 이 함수는 삭제됩니다.
+@app.delete("/api/rollback_document/{doc_type}/{job_slug}/{version_to_rollback}", response_class=JSONResponse)
+async def rollback_document_endpoint(doc_type: str, job_slug: str, version_to_rollback: int):
+    """
+    파일 시스템에서 특정 문서 타입을 지정된 버전으로 롤백합니다.
+    해당 버전 이후의 모든 파일을 삭제합니다.
+    """
+    decoded_job_slug = unquote(job_slug)
+    doc_type_dir = os.path.join(DATA_DIR, decoded_job_slug, doc_type)
+
+    if not os.path.exists(doc_type_dir):
+        raise HTTPException(status_code=404, detail=f"Document type directory not found: {doc_type_dir}")
+
+    # 현재 존재하는 모든 버전 파일 목록 가져오기
+    existing_versions = []
+    for filename in os.listdir(doc_type_dir):
+        if filename.startswith("v") and filename.endswith(".json"):
+            try:
+                version_num = int(filename[1:-5]) # "vX.json" -> X 추출
+                existing_versions.append(version_num)
+            except ValueError:
+                continue
+
+    # 롤백할 버전보다 높은 모든 버전 삭제
+    versions_to_delete = [v for v in existing_versions if v > version_to_rollback]
+    for version_num in versions_to_delete:
+        file_path = os.path.join(doc_type_dir, f"v{version_num}.json")
+        try:
+            os.remove(file_path)
+            print(f"Deleted {file_path}")
+        except OSError as e:
+            print(f"Error deleting file {file_path}: {e}")
+            raise HTTPException(status_code=500, detail=f"Error deleting file: {e}")
+
+    # 롤백 후 해당 doc_type의 최신 버전을 클라이언트에게 알릴 필요는 없음
+    # 클라이언트는 load_documents_endpoint를 다시 호출하여 업데이트된 상태를 가져감
+    return JSONResponse(content={"message": f"{doc_type} for {job_slug} rolled back to version {version_to_rollback}."})
 
 
 @app.post("/api/analyze_document/{doc_type}")
@@ -278,13 +340,14 @@ async def analyze_document_endpoint(
         loaded_all_docs = await load_documents_from_file_system(job_slug)
         if doc_type in loaded_all_docs:
             all_docs_of_type = loaded_all_docs[doc_type]
-            # 버전을 기준으로 정렬 (이미 load_documents_from_file_system에서 정렬되지만, 다시 확인)
+            # 버전을 기준으로 정렬
             all_docs_of_type.sort(key=lambda x: x.get("version", 0))
 
         # 현재 버전에 해당하는 이전/이전 이전 문서 찾기
         for doc in all_docs_of_type:
             if doc.get("version") == new_version_number - 1:
                 previous_document_content = doc.get("content")
+                # 이전 피드백은 이제 JSON 문자열일 수 있으므로, 전체 피드백만 사용
                 previous_feedback = doc.get("feedback")
             elif doc.get("version") == new_version_number - 2:
                 older_document_content = doc.get("content")
@@ -295,7 +358,6 @@ async def analyze_document_endpoint(
         if doc_type == "resume":
             text_for_embedding = " ".join([f"{key}: {value}" for key, value in doc_content_dict.items()])
         elif doc_type == "cover_letter":
-            # 5가지 새로운 질문 필드를 모두 포함하도록 수정
             reason_for_application = doc_content_dict.get('reason_for_application', '')
             expertise_experience = doc_content_dict.get('expertise_experience', '')
             collaboration_experience = doc_content_dict.get('collaboration_experience', '')
@@ -309,41 +371,53 @@ async def analyze_document_endpoint(
                 f"도전적 목표 경험: {challenging_goal_experience} "
                 f"성장 과정: {growth_process}"
             )
-        else: # 포트폴리오 등 기타 문서
+        else: # 포트폴리오 등 기타 문서 (이 엔드포인트는 주로 텍스트 문서용)
             text_for_embedding = json.dumps(doc_content_dict, ensure_ascii=False)
 
         embedding_vector = await get_embedding(text_for_embedding)
 
-        # AI 피드백 생성 시 이전 버전 데이터 전달
-        feedback_response = await get_ai_feedback(
+        # AI 피드백 생성 (이제 JSON 응답을 반환)
+        feedback_response_json = await get_ai_feedback(
             job_title,
             doc_type,
             doc_content_dict,
             previous_document_content=previous_document_content,
-            previous_feedback=previous_feedback,
+            previous_feedback=previous_feedback, # 이전 feedback은 overall_feedback string
             older_document_content=older_document_content,
-            older_feedback=older_feedback
+            older_feedback=older_feedback # 이전 feedback은 overall_feedback string
         )
         
-        if feedback_response.status_code != 200:
-            return feedback_response
+        if feedback_response_json.status_code != 200:
+            # get_ai_feedback에서 오류가 발생한 경우 해당 응답을 그대로 반환
+            return feedback_response_json
         
-        feedback_content = json.loads(feedback_response.body.decode('utf-8'))
-        ai_feedback = feedback_content.get("feedback")
+        # get_ai_feedback에서 반환된 JSON 내용을 직접 가져옴
+        feedback_content = json.loads(feedback_response_json.body.decode('utf-8'))
+        
+        # overall_feedback과 individual_feedbacks를 추출
+        overall_ai_feedback = feedback_content.get("overall_feedback")
+        individual_ai_feedbacks = feedback_content.get("individual_feedbacks", {})
+
 
         doc_to_save = {
             "job_title": job_title,
             "doc_type": doc_type, 
             "version": new_version_number,
             "content": doc_content_dict,
-            "feedback": ai_feedback,
+            "feedback": overall_ai_feedback, # 전체 피드백 저장
+            "individual_feedbacks": individual_ai_feedbacks, # 개별 피드백 저장
             "embedding": embedding_vector
         }
 
         # 파일 시스템에 문서 저장
         await save_document_to_file_system(doc_to_save)
 
-        return JSONResponse(content={"message": "Document analyzed and saved successfully!", "feedback": ai_feedback}, status_code=200)
+        return JSONResponse(content={
+            "message": "Document analyzed and saved successfully!", 
+            "ai_feedback": overall_ai_feedback, # 클라이언트에게 전체 피드백 반환
+            "individual_feedbacks": individual_ai_feedbacks, # 클라이언트에게 개별 피드백 반환
+            "new_version_data": doc_to_save # 클라이언트가 다이어그램 업데이트에 사용할 새 버전 데이터
+        }, status_code=200)
 
     except Exception as e:
         print(f"Error in analyze_document_endpoint: {e}")
@@ -371,7 +445,8 @@ async def portfolio_summary(
                 )
                 
             with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
-                await aiofiles.write(tmp.name, contents) # aiofiles.write 사용
+                # aiofiles.write는 동기 함수가 아니므로 await 사용
+                await aiofiles.write(tmp.name, contents) 
                 tmp_path = tmp.name
                 
             try:
@@ -392,7 +467,7 @@ async def portfolio_summary(
                 try:
                     os.unlink(tmp_path)
                 except Exception as e:
-                    print(f"Error unlinking temporary file: {e}") # 에러 메시지 추가
+                    print(f"Error unlinking temporary file: {e}") 
                     pass
 
         except Exception as e:
@@ -417,13 +492,17 @@ async def portfolio_summary(
 
     try:
         # 포트폴리오 요약은 이전 버전 문서/피드백을 고려하지 않으므로, 이 인자들은 전달하지 않음
-        ai_response = await get_ai_feedback(job_title, doc_type_for_prompt, prompt_content_for_ai)
+        # get_ai_feedback은 이제 JSON 응답을 반환
+        ai_response_json = await get_ai_feedback(job_title, doc_type_for_prompt, prompt_content_for_ai)
         
-        if ai_response.status_code != 200:
-            return ai_response
+        if ai_response_json.status_code != 200:
+            return ai_response_json
         
-        summary_content = json.loads(ai_response.body.decode('utf-8'))
-        summary = summary_content.get("feedback", "")
+        summary_content = json.loads(ai_response_json.body.decode('utf-8'))
+        summary = summary_content.get("overall_feedback", "") # 전체 요약 내용을 가져옴
+
+        # 포트폴리오의 경우 개별 피드백은 중요하지 않으므로 빈 객체로 설정하거나 필요에 따라 추가
+        individual_feedbacks = summary_content.get("individual_feedbacks", {}) 
 
         if not summary:
             return JSONResponse(content={"error": "AI 요약 내용이 없습니다."}, status_code=500)
@@ -432,12 +511,12 @@ async def portfolio_summary(
         print(traceback.format_exc())
         return JSONResponse(content={"error": f"AI 요약 오류: {e}"}, status_code=500)
 
+    # PDF 생성 및 저장 (기존 로직 유지)
     try:
         pdf = FPDF()
         pdf.add_page()
         font_path = os.path.join("static", "fonts", "NotoSansKR-Regular.ttf")
         if not os.path.exists(font_path):
-            # Attempt to find it in a common alternative path if running from root
             font_path_alt = os.path.join(os.getcwd(), "static", "fonts", "NotoSansKR-Regular.ttf")
             if not os.path.exists(font_path_alt):
                 raise FileNotFoundError(f"폰트 파일을 찾을 수 없습니다: {font_path} 또는 {font_path_alt}. static/fonts/NotoSansKR-Regular.ttf 경로를 확인해주세요.")
@@ -447,14 +526,78 @@ async def portfolio_summary(
         pdf.set_font("NotoSans", size=12)
         pdf.multi_cell(0, 10, summary)
 
-        with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as out_pdf:
-            pdf.output(out_pdf.name)
-            pdf_path = out_pdf.name
+        # PDF 파일을 임시로 저장하고 클라이언트에 응답
+        # NOTE: 이 부분은 클라이언트가 PDF를 다운로드하면서 동시에 JSON 데이터를 받을 수 없으므로,
+        # JSON 응답으로 변경하고 PDF 다운로드 URL을 제공하는 방식으로 수정합니다.
+        # 실제 PDF 파일을 서버의 static 디렉토리 내에 저장하고 해당 URL을 제공해야 합니다.
+        
+        # 새 PDF 파일 저장 경로 (실제 파일 저장 로직)
+        pdf_output_dir = os.path.join(DATA_DIR, "generated_summaries")
+        os.makedirs(pdf_output_dir, exist_ok=True) # 디렉토리 생성
+
+        # 새 버전 번호 결정 (파일 시스템에서 기존 버전 로드)
+        job_slug_for_filename = job_title.replace(" ", "-").replace("/", "-").lower()
+        doc_type_for_save = "portfolio_summary" # 포트폴리오 요약 파일용 문서 타입
+        
+        # 파일명 중복을 피하기 위해 버전 번호를 직접 관리하거나, UUID 등을 사용하는 것이 좋음
+        # 여기서는 단순히 다음 버전 번호를 사용하지만, 실제로는 job_slug_doc_type_vX.pdf 형태가 더 적합.
+        # 일단은 `job_slug`와 현재 타임스탬프 또는 단순히 "latest" 등으로 관리하는 것이 간단
+        
+        # 기존 요약 파일이 있다면 버전 관리
+        current_summary_versions = [f for f in os.listdir(pdf_output_dir) if f.startswith(f"portfolio_summary_{job_slug_for_filename}_v") and f.endswith(".pdf")]
+        next_summary_version_number = 0
+        if current_summary_versions:
+            max_version = max([int(f.split('_v')[-1].replace('.pdf', '')) for f in current_summary_versions])
+            next_summary_version_number = max_version + 1
+
+        output_filename = f"portfolio_summary_{job_slug_for_filename}_v{next_summary_version_number}.pdf"
+        pdf_filepath_on_server = os.path.join(pdf_output_dir, output_filename)
+
+        pdf.output(pdf_filepath_on_server) # PDF 파일을 서버에 저장
+        print(f"Portfolio summary PDF saved to: {pdf_filepath_on_server}")
+        
+        # 클라이언트에게 제공할 다운로드 URL
+        download_url = f"/data/generated_summaries/{output_filename}"
+
+        # 파일 시스템에 포트폴리오 정보 저장
+        doc_type = "portfolio" # 포트폴리오 문서 타입
+        
+        # 이전에 저장된 포트폴리오 문서의 다음 버전 번호를 가져옴 (summary와 별개)
+        loaded_all_docs = await load_documents_from_file_system(job_slug_for_filename)
+        current_portfolio_versions = loaded_all_docs.get(doc_type, [])
+        new_version_number_for_db = len(current_portfolio_versions) # 다음 버전 번호
+        
+        doc_to_save = {
+            "job_title": job_title,
+            "doc_type": doc_type, 
+            "version": new_version_number_for_db,
+            "content": {
+                "portfolio_pdf_filename": portfolio_pdf.filename if portfolio_pdf else None,
+                "portfolio_link": portfolio_link,
+                "summary": summary,
+                "download_pdf_url": download_url # 저장된 PDF의 다운로드 URL
+            },
+            "feedback": summary, # 전체 요약 내용을 feedback으로 저장
+            "individual_feedbacks": individual_feedbacks, # 포트폴리오는 비어있을 가능성이 높음
+            "embedding": await get_embedding(summary) # 요약 텍스트로 임베딩 생성
+        }
+        await save_document_to_file_system(doc_to_save)
+
+        return JSONResponse(content={
+            "message": "포트폴리오가 성공적으로 업로드 및 요약되었습니다.",
+            "ai_summary": summary, # AI 요약 텍스트
+            "individual_feedbacks": individual_feedbacks, # 포트폴리오의 경우 비어있을 수 있음
+            "new_version_data": doc_to_save, # 새 버전 데이터 (클라이언트에서 다이어그램 업데이트용)
+            "download_url": download_url # 클라이언트가 다운로드할 수 있는 URL
+        }, status_code=200)
+
     except Exception as e:
         print(traceback.format_exc())
-        return JSONResponse(content={"error": f"PDF 생성 오류: {e}"}, status_code=500)
+        return JSONResponse(content={"error": f"PDF 생성 및 저장 오류: {e}"}, status_code=500)
 
-    return FileResponse(pdf_path, filename=f"portfolio_summary_{job_title}.pdf", media_type="application/pdf")
+# 서버에서 생성된 파일을 제공하기 위한 새로운 StaticFiles 마운트
+# /data/generated_summaries 경로의 파일을 웹에서 접근 가능하게 함
+app.mount("/data", StaticFiles(directory=DATA_DIR), name="data")
 
 
 if __name__ == "__main__":

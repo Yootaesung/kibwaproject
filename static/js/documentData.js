@@ -16,6 +16,7 @@ export function initializeDefaultDocumentData() {
         displayContent: "이력서 (v0)",
         koreanName: "이력서",
         feedback: "",
+        individual_feedbacks: {}, // ⭐️ 추가: 이력서에도 개별 피드백 필드 추가
       },
     ],
     cover_letter: [
@@ -25,6 +26,7 @@ export function initializeDefaultDocumentData() {
         displayContent: "자기소개서 (v0)",
         koreanName: "자기소개서",
         feedback: "",
+        individual_feedbacks: {}, // ⭐️ 추가: 자기소개서에도 개별 피드백 필드 추가
       },
     ],
     portfolio: [
@@ -34,6 +36,7 @@ export function initializeDefaultDocumentData() {
         displayContent: "포트폴리오 (v0)",
         koreanName: "포트폴리오",
         feedback: "",
+        individual_feedbacks: {}, // ⭐️ 추가: 포트폴리오에도 개별 피드백 필드 추가
       },
     ],
   };
@@ -56,8 +59,38 @@ export function setJobTitle(title) {
   jobTitle = title;
 }
 
-export function addNewDocumentVersion(docType, newVersionData) {
+/**
+ * 새 문서 버전을 추가하고 currentDocVersion을 업데이트합니다.
+ * @param {string} docType - 문서 타입 ('resume', 'cover_letter', 'portfolio').
+ * @param {number} version - 새 버전 번호.
+ * @param {object} content - 문서 내용.
+ * @param {string} feedback - AI 피드백 (전체).
+ * @param {object} individualFeedbacks - 개별 피드백 객체. ⭐️ 추가 파라미터
+ */
+export function addNewDocumentVersion(
+  docType,
+  version,
+  content,
+  feedback,
+  individualFeedbacks = {}
+) {
+  if (!documentData[docType]) {
+    documentData[docType] = [];
+  }
+
+  const newVersionData = {
+    version: version,
+    content: content,
+    displayContent: `${
+      getDocumentVersionData(docType, 0).koreanName
+    } (v${version})`,
+    koreanName: getDocumentVersionData(docType, 0).koreanName,
+    feedback: feedback,
+    individual_feedbacks: individualFeedbacks, // ⭐️ 저장: 개별 피드백 저장
+  };
+
   documentData[docType].push(newVersionData);
+  // setCurrentDocInfo는 외부에서 호출될 것이므로 여기서 currentDocVersion을 직접 업데이트하지 않습니다.
 }
 
 export function truncateDocumentVersions(docType, version) {
@@ -114,6 +147,7 @@ export function saveCurrentFormContent() {
           challengingGoalExperience.value;
       if (growthProcess) docContent.growth_process = growthProcess.value;
     } else {
+      // 이력서 등의 다른 문서 타입 처리
       const textareas = document
         .getElementById("form-fields")
         .querySelectorAll("textarea");

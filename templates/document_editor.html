@@ -52,14 +52,25 @@
               <div id="form-fields"></div>
               <button type="submit" class="submit-button">저장 및 분석</button>
             </form>
-            <div id="ai-feedback-area" class="ai-feedback">
+            <div
+              id="ai-feedback-area"
+              class="ai-feedback"
+              style="display: none"
+            >
               <h3>AI 피드백</h3>
-              <div id="ai-feedback-content"></div>
+              <p id="ai-overall-feedback-content"></p>
+
+              <div
+                id="ai-individual-feedbacks-container"
+                style="margin-top: 20px"
+              >
+                <h4>항목별 상세 피드백</h4>
+              </div>
             </div>
           </div>
           <div id="loading-overlay" class="loading-overlay">
             <div class="spinner"></div>
-            <p>AI 분석 중...</p>
+            <p id="loading-message">AI 분석 중...</p>
           </div>
         </div>
       </div>
