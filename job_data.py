@@ -154,31 +154,31 @@ JOB_DOCUMENT_SCHEMAS = {
             {
                 "title": "학력 사항",
                 "fields": [
-                    {"name": "education_history", "label": "학력", "type": "textarea", "placeholder": "최종 학력부터 고등학교까지 상세히 기재 (학교명, 전공, 기간, 학점 등).", "required": True},
+                    {"name": "education_history", "label": "학력", "type": "textarea", "placeholder": "내용을 입력하세요.", "required": True},
                 ]
             },
             {
                 "title": "경력 사항",
                 "fields": [
-                    {"name": "career_history", "label": "경력", "type": "textarea", "placeholder": "회사명, 직위, 재직 기간, 주요 업무 및 성과 (신입의 경우 프로젝트 경험 위주로 작성). 각 경력/프로젝트별로 역할, 사용 기술, 기여도, 결과(수치화)를 구체적으로 작성해주세요.", "required": True},
+                    {"name": "career_history", "label": "경력", "type": "textarea", "placeholder": "내용을 입력하세요.", "required": True},
                 ]
             },
             {
                 "title": "자격증",
                 "fields": [
-                    {"name": "certificates_list", "label": "보유 자격증", "type": "textarea", "placeholder": "취득 자격증을 모두 기재 (자격증명, 발행기관, 취득일). 직무 관련 자격증 우선 기재.", "required": False},
+                    {"name": "certificates_list", "label": "보유 자격증", "type": "textarea", "placeholder": "내용을 입력하세요.", "required": False},
                 ]
             },
             {
                 "title": "수상 및 기타 활동",
                 "fields": [
-                    {"name": "awards_activities", "label": "수상 내역 및 대외활동", "type": "textarea", "placeholder": "수상 내역, 대외활동, 동아리 활동 등을 작성하세요.", "required": False},
+                    {"name": "awards_activities", "label": "수상 내역 및 대외활동", "type": "textarea", "placeholder": "내용을 입력하세요.", "required": False},
                 ]
             },
             {
                 "title": "기술 스택",
                 "fields": [
-                    {"name": "skills_tech", "label": "보유 기술 스택", "type": "textarea", "placeholder": "활용 가능한 프로그래밍 언어, 프레임워크, 툴 등을 상세히 작성하세요.", "required": True},
+                    {"name": "skills_tech", "label": "보유 기술 스택", "type": "textarea", "placeholder": "내용을 입력하세요.", "required": True},
                 ]
             }
         ]
