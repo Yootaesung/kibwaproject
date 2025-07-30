@@ -3,15 +3,15 @@ import { formFields, documentForm } from "./domElements.js";
 import {
   jobTitle,
   currentDocType,
-  currentDocVersion,
-  documentData, // documentData 직접 접근 (업데이트를 위해)
-  updateDocumentData,
+  currentDocVersion, // currentDocVersion은 여기서 읽기 전용으로 사용
+  documentData,
   addNewDocumentVersion,
   truncateDocumentVersions,
   getDocumentVersionData,
+  setCurrentDocInfo, // <-- setCurrentDocInfo 함수 임포트
 } from "./documentData.js";
 import { showLoading, setAiFeedback, setModalTitle } from "./uiHandler.js";
-import { drawDiagram, setupNodeClickEvents } from "./diagramRenderer.js"; // diagramRenderer에서 함수 임포트
+import { drawDiagram } from "./diagramRenderer.js";
 
 /**
  * 일반 문서 (이력서, 자기소개서) 폼 제출을 처리합니다.
@@ -29,58 +29,64 @@ export async function handleDocumentFormSubmit(e) {
     el.style.display = "none";
   });
 
-  // 모든 required 필드에 대한 유효성 검사
+  // 모든 required 필드에 대한 유효성 검사 및 docContent 구성
   const requiredFields = formFields.querySelectorAll("[required]");
   requiredFields.forEach((field) => {
-    if (field.value.trim() === "") {
-      isValid = false;
-      const errorMessageDiv =
-        field.parentElement.querySelector(".error-message");
-      if (errorMessageDiv) {
-        errorMessageDiv.style.display = "block";
+    if (
+      field.tagName === "TEXTAREA" ||
+      field.type === "text" ||
+      field.type === "date"
+    ) {
+      docContent[field.name] = field.value.trim();
+      if (field.value.trim() === "") {
+        isValid = false;
+        const errorMessageDiv =
+          field.parentElement.querySelector(".error-message");
+        if (errorMessageDiv) {
+          errorMessageDiv.style.display = "block";
+        }
       }
-      // 첫 번째 빈 필드로 스크롤 이동 및 포커스
-      if (!document.querySelector(".error-message[style*='block']")) {
-        field.focus();
-        field.scrollIntoView({
-          behavior: "smooth",
-          block: "center",
-        });
+    } else {
+      docContent[field.name] = field.value;
+      if (field.value === "") {
+        isValid = false;
+        const errorMessageDiv =
+          field.parentElement.querySelector(".error-message");
+        if (errorMessageDiv) {
+          errorMessageDiv.style.display = "block";
+        }
       }
     }
-    docContent[field.name] = field.value.trim(); // 일단 내용 저장 (유효성 검사 후 사용)
-  });
-
-  // 파일 입력 필드는 required 검사에서 제외하고 별도 처리
-  const fileInputs = formFields.querySelectorAll('input[type="file"]');
-  fileInputs.forEach((fileInput) => {
-    // 파일 입력은 FormData에 직접 추가되므로 docContent에는 포함시키지 않음
-    // 이 부분은 기존 로직과 동일하게 유지. 파일 유효성은 별도 로직 필요 시 추가
   });
 
   if (!isValid) {
+    const firstInvalidField = document.querySelector(
+      ".error-message[style*='block']"
+    ).previousElementSibling;
+    if (firstInvalidField) {
+      firstInvalidField.focus();
+      firstInvalidField.scrollIntoView({
+        behavior: "smooth",
+        block: "center",
+      });
+    }
     alert("필수 입력 항목을 모두 채워주세요.");
-    return; // 유효성 검사 실패 시 함수 종료
+    return;
   }
 
-  // 이하는 기존의 AI 분석 및 저장 로직
   try {
-    // 1. 현재 편집 중인 문서 버전을 documentData에서 찾습니다.
     const currentDocInArray = getDocumentVersionData(
       currentDocType,
       currentDocVersion
     );
 
-    // ⭐️ 수정 시작: 백엔드 Pydantic 모델에 맞게 requestBody 구성 ⭐️
-    // 'version' 필드를 추가하고, 이전 버전 데이터 필드는 백엔드에서 직접 처리하도록 제거합니다.
     const requestBody = {
       job_title: jobTitle,
-      document_content: docContent, // 현재 폼에서 입력된 내용
-      version: currentDocVersion, // 이 필드가 '422 Unprocessable Entity' 오류의 주된 원인이었습니다.
+      document_content: docContent,
+      version: currentDocVersion,
     };
-    // ⭐️ 수정 끝 ⭐️
 
-    showLoading(true, "AI 분석 중..."); // 로딩 오버레이 표시
+    showLoading(true, "AI 분석 중...");
 
     const response = await fetch(`/api/analyze_document/${currentDocType}`, {
       method: "POST",
@@ -91,47 +97,39 @@ export async function handleDocumentFormSubmit(e) {
     });
     const result = await response.json();
 
-    showLoading(false); // 로딩 오버레이 숨김
+    showLoading(false);
 
     if (response.ok) {
-      // 2. 현재 버전 (vN)의 content와 feedback을 업데이트합니다.
       if (currentDocInArray) {
-        currentDocInArray.content = docContent; // 현재 폼 내용으로 업데이트
-        currentDocInArray.feedback = result.feedback; // 새로 받은 AI 피드백으로 업데이트
+        currentDocInArray.content = docContent;
+        currentDocInArray.feedback = result.feedback;
       }
 
-      // 3. 만약 현재 편집 중인 버전이 가장 최신 버전이 아니라면, 그 이후의 버전을 잘라냅니다.
-      // (예: v0을 편집하고 저장하면, v1, v2...가 있었다면 모두 제거하고 v0에서 새로운 브랜치 시작)
       if (currentDocVersion < documentData[currentDocType].length - 1) {
         truncateDocumentVersions(currentDocType, currentDocVersion);
       }
 
-      // 4. 새로운 버전 (vN+1)의 번호를 결정합니다. (배열의 현재 길이)
       const newVersionNumberForPush = documentData[currentDocType].length;
 
-      // 5. 새로 생성될 버전 (vN+1) 객체를 정의합니다.
-      // 이 객체는 현재 업데이트된 vN의 내용과 피드백을 복사합니다.
       const newDocForNextVersion = {
         version: newVersionNumberForPush,
-        content: { ...currentDocInArray.content }, // 업데이트된 vN의 content 복사
+        content: { ...currentDocInArray.content },
         displayContent: `${currentDocInArray.koreanName} (v${newVersionNumberForPush})`,
         koreanName: currentDocInArray.koreanName,
-        feedback: currentDocInArray.feedback, // 업데이트된 vN의 feedback 복사
+        feedback: currentDocInArray.feedback,
       };
 
-      // 6. 새로운 버전을 documentData 배열에 추가합니다.
       addNewDocumentVersion(currentDocType, newDocForNextVersion);
 
-      // 7. 현재 활성 버전을 새로 생성된 vN+1로 업데이트합니다.
-      currentDocVersion = newVersionNumberForPush;
+      // ⭐️ 수정된 부분: currentDocVersion에 직접 재할당하는 대신 setCurrentDocInfo 사용 ⭐️
+      setCurrentDocInfo(currentDocType, newVersionNumberForPush); // <-- 여기를 수정했습니다.
 
-      // UI 업데이트
       setModalTitle(
-        `${currentDocInArray.koreanName} 편집 (v${currentDocVersion})`
+        `${currentDocInArray.koreanName} 편집 (v${newVersionNumberForPush})` // 새로운 버전 번호 사용
       );
       setAiFeedback(result.feedback);
 
-      drawDiagram(); // 다이어그램 다시 그리기
+      drawDiagram();
       alert("문서가 저장되고 분석되었습니다. AI 피드백을 확인하세요.");
     } else {
       const errorMessage = result.detail
@@ -143,7 +141,7 @@ export async function handleDocumentFormSubmit(e) {
   } catch (error) {
     console.error("API 통신 오류:", error);
     alert("서버와 통신 중 오류가 발생했습니다.");
-    showLoading(false); // 로딩 오버레이 숨김
+    showLoading(false);
     setAiFeedback(`오류: ${error.message}`);
   }
 }
