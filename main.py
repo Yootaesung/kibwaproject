@@ -1,4 +1,3 @@
-# main.py
 from fastapi import FastAPI, Request, Form, UploadFile, File, HTTPException, Body
 from fastapi.responses import HTMLResponse, JSONResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
@@ -223,6 +222,39 @@ async def get_document_schema_endpoint(doc_type: str, job_slug: str): # 엔드�
         raise HTTPException(status_code=404, detail="Document schema not found for this type or job.")
     return JSONResponse(content=schema)
 
+# 새로 추가된 엔드포인트
+@app.get("/api/load_documents/{job_slug}", response_class=JSONResponse)
+async def api_load_documents(job_slug: str):
+    """
+    특정 직무(job_slug)에 해당하는 모든 문서(이력서, 자기소개서, 포트폴리오)를 로드합니다.
+    """
+    decoded_job_slug = unquote(job_slug)
+    print(f"API Load Documents: Received job_slug: {job_slug}, Decoded: {decoded_job_slug}")
+
+    # 실제 job_title 유효성 검사 (필요하다면)
+    job_title_found = False
+    for category_jobs in JOB_CATEGORIES.values():
+        for j_title in category_jobs:
+            normalized_j_title_slug = j_title.replace(" ", "-").replace("/", "-").lower()
+            if normalized_j_title_slug == decoded_job_slug:
+                job_title_found = True
+                break
+        if job_title_found:
+            break
+            
+    if not job_title_found:
+        print(f"API Load Documents: Job not found for slug: {decoded_job_slug}")
+        raise HTTPException(status_code=404, detail=f"Job not found for slug: {decoded_job_slug}")
+
+    try:
+        loaded_data = await load_documents_from_file_system(decoded_job_slug)
+        return JSONResponse(content=loaded_data)
+    except Exception as e:
+        print(f"Error loading documents for {decoded_job_slug}: {e}")
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Failed to load documents: {e}")
+
+
 # --- 파일 시스템 기반 데이터 로드 및 저장 함수 ---
 async def load_documents_from_file_system(job_slug: str) -> Dict[str, List[Dict[str, Any]]]:
     """
@@ -365,7 +397,7 @@ async def retrieve_relevant_feedback_history(
         return []
     print(f"Generated current embedding. Length: {len(current_embedding)}")
     
-    similarities = []
+    sim_results = [] # similarities 대신 sim_results 변수명 사용
     for entry in all_docs_of_type:
         # 임베딩이 없는 데이터는 건너뜁니다.
         if "embedding" not in entry or not entry["embedding"]:
@@ -373,13 +405,13 @@ async def retrieve_relevant_feedback_history(
             continue
             
         similarity = _cosine_similarity(current_embedding, entry["embedding"])
-        similarities.append((similarity, entry))
+        sim_results.append((similarity, entry))
             
-    similarities.sort(key=lambda x: x[0], reverse=True) # 유사도 높은 순으로 정렬
+    sim_results.sort(key=lambda x: x[0], reverse=True) # 유사도 높은 순으로 정렬
     
     retrieved_history = []
     # 유사도 높은 순으로 최대 top_k개 가져오기
-    for sim, entry in similarities:
+    for sim, entry in sim_results:
         if len(retrieved_history) < top_k:
             retrieved_history.append(entry)
             print(f"Retrieved history: version {entry.get('version')}, similarity: {sim:.4f}")
