@@ -119,12 +119,12 @@ export async function handleDocumentFormSubmit(e) {
     if (!response.ok) {
       alert(`AI 분석 오류: ${result.error || response.statusText}`);
       setAiFeedback(result.error || "AI 분석 중 오류 발생", {}, currentDocType);
-      showLoading(false); // Make sure loading is hidden on error
+      showLoading(false);
       return;
     }
 
-    // ⭐️ 수정: AI 피드백이 없을 경우 빈 문자열 할당 (null, undefined, "" 모두 처리)
-    const overallAiFeedback = result.overall_feedback || "";
+    // ⭐️ 중요 수정: 서버 응답의 "ai_feedback" 키를 사용합니다.
+    const overallAiFeedback = result.ai_feedback || "";
     const individualAiFeedbacks = result.individual_feedbacks || {};
     const newEmbedding = result.new_version_data
       ? result.new_version_data.embedding
@@ -133,7 +133,7 @@ export async function handleDocumentFormSubmit(e) {
       ? result.new_version_data.content_hash
       : "";
 
-    // vN에 적은 내용과 그에 대한 피드백을 vN에 저장 및 표시
+    // 현재 버전 (vN)의 내용을 업데이트
     updateExistingDocumentVersion(
       currentDocType,
       currentDocVersion,
@@ -144,40 +144,29 @@ export async function handleDocumentFormSubmit(e) {
       newContentHash
     );
 
-    const currentDocKoreanName = getKoreanNameForDisplay(currentDocType);
-    setModalTitle(`${currentDocKoreanName} (v${currentDocVersion})`);
-    setAiFeedback(overallAiFeedback, individualAiFeedbacks, currentDocType);
-
+    // 버전 히스토리를 현재 버전까지로 정리
     truncateDocumentVersions(currentDocType, currentDocVersion);
 
     const nextVersionNumber = currentDocVersion + 1;
 
-    // 업데이트된 vN의 내용을 복사하여 새로운 v(N+1)을 생성
+    // 다음 버전 (vN+1)을 생성하고, vN의 내용 및 피드백을 복사
     addNewDocumentVersion(
       currentDocType,
       nextVersionNumber,
-      docContent, // vN의 내용 복사
-      overallAiFeedback, // vN의 피드백 복사
+      docContent,
+      overallAiFeedback,
       individualAiFeedbacks,
       newEmbedding,
       newContentHash
     );
 
+    // 현재 문서 정보(타입, 버전)를 업데이트
     setCurrentDocInfo(currentDocType, nextVersionNumber);
 
-    // ⭐️ 디버깅을 위해 여기에 console.log 추가
-    console.log(
-      "DocumentData state after adding new version and setting current info:",
-      documentData
-    );
-
+    // 다이어그램을 다시 그립니다.
     drawDiagram();
 
-    const nextDocVersionData = getDocumentVersionData(
-      currentDocType,
-      nextVersionNumber
-    );
-
+    // 다음 버전에 대한 스키마를 가져옵니다.
     const schemaResponse = await fetch(
       "/api/document_schema/" +
         currentDocType +
@@ -186,15 +175,15 @@ export async function handleDocumentFormSubmit(e) {
     );
     const schema = await schemaResponse.json();
 
-    renderFormFields(schema, nextDocVersionData.content);
+    // 폼 필드를 다음 버전의 내용으로 렌더링
+    renderFormFields(schema, docContent);
 
-    setModalTitle(`${currentDocKoreanName} (v${nextVersionNumber})`);
-
-    setAiFeedback(
-      nextDocVersionData.feedback,
-      nextDocVersionData.individual_feedbacks,
-      currentDocType
+    // API 응답에서 받은 피드백을 직접 UI에 설정합니다.
+    setModalTitle(
+      `${getKoreanNameForDisplay(currentDocType)} (v${nextVersionNumber})`
     );
+    setAiFeedback(overallAiFeedback, individualAiFeedbacks, currentDocType);
+
     document.getElementById("edit-modal").style.display = "block";
 
     alert("문서가 성공적으로 분석되고 다음 버전이 생성되었습니다!");
@@ -274,7 +263,6 @@ export async function handlePortfolioFormSubmit(e) {
         alert("PDF 다운로드 정보가 없습니다.");
       }
 
-      // ⭐️ 수정: AI 요약 피드백이 없을 경우 빈 문자열 할당
       const aiSummary = result.ai_summary || "";
       const individualFeedbacks = result.individual_feedbacks || {};
       const embedding = result.new_version_data
