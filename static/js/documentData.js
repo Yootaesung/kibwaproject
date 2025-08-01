@@ -56,8 +56,7 @@ function getKoreanName(docType) {
     case "cover_letter":
       return "자기소개서";
     case "portfolio":
-      return "포트폴리오";
-    // 필요한 경우 추가적인 문서 타입 처리
+      return "포트폴리오"; // 필요한 경우 추가적인 문서 타입 처리
     default:
       return docType;
   }
@@ -101,15 +100,8 @@ export function updateExistingDocumentVersion(
       docToUpdate.feedback = feedback;
       docToUpdate.individual_feedbacks = individualFeedbacks;
       docToUpdate.embedding = embedding;
-      docToUpdate.content_hash = contentHash;
-      // displayContent도 업데이트하여 다이어그램에 최신 피드백 반영
-      docToUpdate.displayContent = `${docToUpdate.koreanName} (v${version})${
-        feedback
-          ? " - " +
-            feedback.substring(0, Math.min(feedback.length, 50)) +
-            (feedback.length > 50 ? "..." : "")
-          : ""
-      }`;
+      docToUpdate.content_hash = contentHash; // ⭐️ 수정된 부분: 모든 문서의 다이어그램 제목에서 피드백 제거
+      docToUpdate.displayContent = `${docToUpdate.koreanName} (v${version})`;
       console.log(`Updated document ${docType} v${version}`);
     } else {
       console.warn(`Document ${docType} v${version} not found for update.`);
@@ -148,19 +140,11 @@ export function addNewDocumentVersion(
     individual_feedbacks: individualFeedbacks,
     embedding: embedding,
     content_hash: contentHash,
-    koreanName: koreanName,
-    // displayContent는 다이어그램에서 보일 내용, 피드백을 포함
-    displayContent: `${koreanName} (v${version})${
-      feedback
-        ? " - " +
-          feedback.substring(0, Math.min(feedback.length, 50)) +
-          (feedback.length > 50 ? "..." : "")
-        : ""
-    }`,
+    koreanName: koreanName, // ⭐️ 수정된 부분: 모든 문서의 다이아그램 제목에서 피드백 제거
+    displayContent: `${koreanName} (v${version})`,
   };
 
-  documentData[docType].push(newVersionData);
-  // 버전을 기준으로 정렬하여 항상 오름차순 유지
+  documentData[docType].push(newVersionData); // 버전을 기준으로 정렬하여 항상 오름차순 유지
   documentData[docType].sort((a, b) => a.version - b.version);
   console.log(`Added new document version ${docType} v${version}`);
 }
@@ -197,9 +181,8 @@ export function saveCurrentFormContent() {
 
   if (versionToUpdate) {
     const docContent = {};
-    const formFieldsContainer = document.getElementById("form-fields"); // domElements에서 가져오는 것이 더 좋음
+    const formFieldsContainer = document.getElementById("form-fields"); // domElements에서 가져오는 것이 더 좋음 // 폼 필드에서 데이터를 가져오는 일반화된 로직 (formSubmitHandler와 유사하게)
 
-    // 폼 필드에서 데이터를 가져오는 일반화된 로직 (formSubmitHandler와 유사하게)
     formFieldsContainer
       .querySelectorAll("textarea, input:not([type='file'])")
       .forEach((field) => {
