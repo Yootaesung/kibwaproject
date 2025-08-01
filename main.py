@@ -456,30 +456,6 @@ async def analyze_document_endpoint(
             if len(relevant_history_entries) > 1:
                 older_document_data = relevant_history_entries[1] # 그 다음 이전 버전
 
-        # 2. 내용 해시를 이용한 동일 내용 확인
-        current_content_hash = calculate_content_hash(doc_content_dict)
-        if previous_document_data and previous_document_data.get("content_hash") == current_content_hash:
-            print(f"Content for {doc_type} version {new_version_number} is identical to previous version {previous_document_data.get('version')}.")
-            # 내용이 동일하다면, '개선되었다'는 피드백 대신 고정된 피드백 반환
-            return JSONResponse(
-                content={
-                    "message": "Document analyzed and saved successfully!",
-                    "ai_feedback": f"이전 버전 (v{previous_document_data.get('version')})과 내용이 동일합니다. 이전 피드백을 반영하여 내용을 수정해주세요.",
-                    "individual_feedbacks": {"info": "내용 변경 없음"},
-                    "new_version_data": {
-                        "job_title": job_title,
-                        "doc_type": doc_type, 
-                        "version": new_version_number,
-                        "content": doc_content_dict,
-                        "feedback": f"이전 버전 (v{previous_document_data.get('version')})과 내용이 동일합니다. 이전 피드백을 반영하여 내용을 수정해주세요.",
-                        "individual_feedbacks": {"info": "내용 변경 없음"},
-                        "embedding": previous_document_data.get("embedding", []), # 이전 버전 임베딩 재사용
-                        "content_hash": current_content_hash
-                    }
-                }, 
-                status_code=200
-            )
-
         # 3. AI 피드백 생성
         # get_ai_feedback 함수에 previous_document_data, older_document_data, additional_user_context를 직접 전달
         feedback_response_json = await get_ai_feedback(
@@ -521,6 +497,9 @@ async def analyze_document_endpoint(
             text_for_current_embedding = json.dumps(doc_content_dict, ensure_ascii=False)
 
         current_doc_embedding = await get_embedding(text_for_current_embedding)
+        
+        # 내용 해시 계산은 계속 진행 (저장되는 데이터에 포함시키기 위함)
+        current_content_hash = calculate_content_hash(doc_content_dict)
 
         # 5. 문서 데이터에 임베딩, 피드백, 해시 추가 후 저장
         doc_to_save = {
@@ -575,8 +554,10 @@ async def portfolio_summary(
                 )
                 
             with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
-                await aiofiles.write(tmp.name, contents) 
                 tmp_path = tmp.name
+            
+            async with aiofiles.open(tmp_path, 'wb') as f:
+                await f.write(contents)
                 
             try:
                 reader = PdfReader(tmp_path)

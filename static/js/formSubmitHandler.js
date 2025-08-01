@@ -3,15 +3,31 @@ import { formFields, documentForm } from "./domElements.js";
 import {
   jobTitle,
   currentDocType,
-  currentDocVersion, // currentDocVersion은 여기서 읽기 전용으로 사용
+  currentDocVersion,
   documentData,
   addNewDocumentVersion,
   truncateDocumentVersions,
   getDocumentVersionData,
   setCurrentDocInfo,
+  updateExistingDocumentVersion,
 } from "./documentData.js";
-import { showLoading, setAiFeedback, setModalTitle } from "./uiHandler.js"; // setModalTitle은 uiHandler에서 가져옵니다.
+import { showLoading, setAiFeedback, setModalTitle } from "./uiHandler.js";
 import { drawDiagram } from "./diagramRenderer.js";
+import { renderFormFields } from "./formRenderer.js";
+
+// 헬퍼 함수: 문서 타입에 대한 한글 이름을 가져옵니다.
+function getKoreanNameForDisplay(docType) {
+  switch (docType) {
+    case "resume":
+      return "이력서";
+    case "cover_letter":
+      return "자기소개서";
+    case "portfolio":
+      return "포트폴리오";
+    default:
+      return docType;
+  }
+}
 
 /**
  * 일반 문서 (이력서, 자기소개서) 폼 제출을 처리합니다.
@@ -20,35 +36,42 @@ import { drawDiagram } from "./diagramRenderer.js";
 export async function handleDocumentFormSubmit(e) {
   e.preventDefault();
 
-  const formData = new FormData(documentForm);
-  const docContent = {}; // 사용자가 현재 폼에서 입력한 내용
-  let isValid = true; // 유효성 검사 플래그
+  const docContent = {};
+  let isValid = true;
 
-  // 기존 오류 메시지 모두 숨기기
   document.querySelectorAll(".error-message").forEach((el) => {
     el.style.display = "none";
   });
 
-  // 모든 required 필드에 대한 유효성 검사 및 docContent 구성
   const requiredFields = formFields.querySelectorAll("[required]");
   requiredFields.forEach((field) => {
-    if (
-      field.tagName === "TEXTAREA" ||
-      field.type === "text" ||
-      field.type === "date"
-    ) {
-      docContent[field.name] = field.value.trim();
-      if (field.value.trim() === "") {
+    const fieldName = field.name || field.dataset.fieldName;
+    if (!fieldName) {
+      console.warn("Field missing name or data-field-name:", field);
+      return;
+    }
+
+    if (field.closest(".array-field-container")) {
+      const arrayContainer = field.closest(".array-field-container");
+      const arrayFieldName = arrayContainer.dataset.arrayFieldName;
+      if (!docContent[arrayFieldName]) {
+        docContent[arrayFieldName] = [];
+      }
+      const itemValue = field.value.trim();
+      if (itemValue) {
+        docContent[arrayFieldName].push(itemValue);
+      }
+
+      if (itemValue === "" && field.hasAttribute("required")) {
         isValid = false;
-        const errorMessageDiv =
-          field.parentElement.querySelector(".error-message");
+        const errorMessageDiv = arrayContainer.querySelector(".error-message");
         if (errorMessageDiv) {
           errorMessageDiv.style.display = "block";
         }
       }
     } else {
-      docContent[field.name] = field.value;
-      if (field.value === "") {
+      docContent[fieldName] = field.value.trim();
+      if (field.value.trim() === "") {
         isValid = false;
         const errorMessageDiv =
           field.parentElement.querySelector(".error-message");
@@ -62,10 +85,10 @@ export async function handleDocumentFormSubmit(e) {
   if (!isValid) {
     const firstInvalidField = document.querySelector(
       ".error-message[style*='block']"
-    ).previousElementSibling;
+    );
     if (firstInvalidField) {
-      firstInvalidField.focus();
-      firstInvalidField.scrollIntoView({
+      firstInvalidField.previousElementSibling.focus();
+      firstInvalidField.previousElementSibling.scrollIntoView({
         behavior: "smooth",
         block: "center",
       });
@@ -74,87 +97,119 @@ export async function handleDocumentFormSubmit(e) {
     return;
   }
 
+  showLoading(true, "AI 분석 중...");
+
   try {
-    const currentDocInArray = getDocumentVersionData(
-      currentDocType,
-      currentDocVersion
-    );
-
-    // 새 버전 번호 결정 (현재 버전 + 1)
-    const newVersionNumber = documentData[currentDocType].length;
-
-    const requestBody = {
-      job_title: jobTitle,
-      document_content: docContent,
-      // 새로운 AI 분석 요청 시에는 항상 최신 버전을 기준으로 함
-      version: newVersionNumber,
-    };
-
-    showLoading(true, "AI 분석 중...");
+    const feedbackReflection =
+      document.getElementById("feedback-reflection-input")?.value || "";
 
     const response = await fetch(`/api/analyze_document/${currentDocType}`, {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify(requestBody),
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        job_title: jobTitle,
+        document_content: docContent,
+        version: currentDocVersion,
+        feedback_reflection: feedbackReflection,
+      }),
     });
+
     const result = await response.json();
 
-    showLoading(false);
-
-    if (response.ok) {
-      // 새 버전이 생성될 경우 기존 데이터는 유지하고 새 버전에 결과 반영
-      // 현재 버전 이후의 가지치기
-      truncateDocumentVersions(currentDocType, currentDocVersion);
-
-      // 새로운 버전 추가
-      addNewDocumentVersion(
-        currentDocType,
-        newVersionNumber, // 새 버전 번호 전달
-        docContent, // 사용자가 입력한 폼 데이터
-        result.ai_feedback, // 백엔드로부터 받은 전체 피드백
-        result.individual_feedbacks // ⭐️ 핵심: 백엔드로부터 받은 개별 피드백
-      );
-
-      // 현재 문서 정보 업데이트 (새로운 버전으로)
-      setCurrentDocInfo(currentDocType, newVersionNumber);
-
-      // 모달 제목 업데이트 (새로운 버전 번호 반영)
-      const currentDocKoreanName = currentDocInArray
-        ? currentDocInArray.koreanName
-        : currentDocType;
-      setModalTitle(`${currentDocKoreanName} 편집 (v${newVersionNumber})`);
-
-      // AI 피드백 UI 업데이트
-      setAiFeedback(
-        result.ai_feedback, // overall_feedback
-        result.individual_feedbacks, // individual_feedbacks
-        currentDocType // 문서 타입 전달 (uiHandler에서 개별 피드백 렌더링에 사용)
-      );
-
-      drawDiagram(); // 다이어그램 다시 그리기 (새 버전 반영)
-      alert("문서가 저장되고 분석되었습니다. AI 피드백을 확인하세요.");
-    } else {
-      const errorMessage = result.detail
-        ? result.detail.map((d) => d.msg).join(", ")
-        : result.error || "알 수 없는 오류";
-      alert(`분석 실패: ${errorMessage}`);
-      // 오류 발생 시에도 피드백 영역에 오류 메시지 표시
-      setAiFeedback(errorMessage, {}, currentDocType);
+    if (!response.ok) {
+      alert(`AI 분석 오류: ${result.error || response.statusText}`);
+      setAiFeedback(result.error || "AI 분석 중 오류 발생", {}, currentDocType);
+      showLoading(false); // Make sure loading is hidden on error
+      return;
     }
+
+    // ⭐️ 수정: AI 피드백이 없을 경우 빈 문자열 할당 (null, undefined, "" 모두 처리)
+    const overallAiFeedback = result.overall_feedback || "";
+    const individualAiFeedbacks = result.individual_feedbacks || {};
+    const newEmbedding = result.new_version_data
+      ? result.new_version_data.embedding
+      : [];
+    const newContentHash = result.new_version_data
+      ? result.new_version_data.content_hash
+      : "";
+
+    // vN에 적은 내용과 그에 대한 피드백을 vN에 저장 및 표시
+    updateExistingDocumentVersion(
+      currentDocType,
+      currentDocVersion,
+      docContent,
+      overallAiFeedback,
+      individualAiFeedbacks,
+      newEmbedding,
+      newContentHash
+    );
+
+    const currentDocKoreanName = getKoreanNameForDisplay(currentDocType);
+    setModalTitle(`${currentDocKoreanName} (v${currentDocVersion})`);
+    setAiFeedback(overallAiFeedback, individualAiFeedbacks, currentDocType);
+
+    truncateDocumentVersions(currentDocType, currentDocVersion);
+
+    const nextVersionNumber = currentDocVersion + 1;
+
+    // 업데이트된 vN의 내용을 복사하여 새로운 v(N+1)을 생성
+    addNewDocumentVersion(
+      currentDocType,
+      nextVersionNumber,
+      docContent, // vN의 내용 복사
+      overallAiFeedback, // vN의 피드백 복사
+      individualAiFeedbacks,
+      newEmbedding,
+      newContentHash
+    );
+
+    setCurrentDocInfo(currentDocType, nextVersionNumber);
+
+    // ⭐️ 디버깅을 위해 여기에 console.log 추가
+    console.log(
+      "DocumentData state after adding new version and setting current info:",
+      documentData
+    );
+
+    drawDiagram();
+
+    const nextDocVersionData = getDocumentVersionData(
+      currentDocType,
+      nextVersionNumber
+    );
+
+    const schemaResponse = await fetch(
+      "/api/document_schema/" +
+        currentDocType +
+        "?job_slug=" +
+        jobTitle.replace(/ /g, "-").replace(/\//g, "-").toLowerCase()
+    );
+    const schema = await schemaResponse.json();
+
+    renderFormFields(schema, nextDocVersionData.content);
+
+    setModalTitle(`${currentDocKoreanName} (v${nextVersionNumber})`);
+
+    setAiFeedback(
+      nextDocVersionData.feedback,
+      nextDocVersionData.individual_feedbacks,
+      currentDocType
+    );
+    document.getElementById("edit-modal").style.display = "block";
+
+    alert("문서가 성공적으로 분석되고 다음 버전이 생성되었습니다!");
   } catch (error) {
-    console.error("API 통신 오류:", error);
-    alert("서버와 통신 중 오류가 발생했습니다.");
+    console.error("문서 제출 중 오류 발생:", error);
+    alert("문서 분석 및 저장 중 오류가 발생했습니다.");
+    setAiFeedback(`오류: ${error.message}`, {}, currentDocType);
+  } finally {
     showLoading(false);
-    // 네트워크 오류 시에도 피드백 영역에 오류 메시지 표시
-    setAiFeedback(`네트워크 오류: ${error.message}`, {}, currentDocType);
   }
 }
 
 /**
  * 포트폴리오 폼 제출을 처리합니다.
- * @param {Event} e - 제출 이벤트.
+ * 이 함수도 handleDocumentFormSubmit과 유사한 로직으로 수정되어야 합니다.
  */
 export async function handlePortfolioFormSubmit(e) {
   e.preventDefault();
@@ -163,7 +218,7 @@ export async function handlePortfolioFormSubmit(e) {
   const formData = new FormData();
   formData.append("job_title", jobTitle);
 
-  let hasPortfolioContent = false; // 포트폴리오 내용 존재 여부 플래그
+  let hasPortfolioContent = false;
 
   if (pdfInput.files.length > 0) {
     formData.append("portfolio_pdf", pdfInput.files[0]);
@@ -174,38 +229,26 @@ export async function handlePortfolioFormSubmit(e) {
     hasPortfolioContent = true;
   }
 
-  // 필수 입력 검사
   if (!hasPortfolioContent) {
     alert("포트폴리오 PDF 파일을 업로드하거나 링크를 입력하세요.");
-    return; // 내용이 없으면 제출 방지
+    return;
   }
 
-  // 현재 입력된 링크 값도 documentData에 저장 (PDF는 직접 저장하지 않음)
-  // ⭐️ 포트폴리오는 파일 업로드/링크 입력 즉시 AI 분석을 요청하므로,
-  // 폼 제출 시 항상 새로운 버전을 생성하거나, 기존 최신 버전을 업데이트하는 방식.
-  // 여기서는 새로운 버전으로 처리하는 것을 고려.
-  const newVersionNumber = documentData["portfolio"].length;
-  // 이전 버전 자르기 (항상 최신 버전에서만 작업한다고 가정)
-  truncateDocumentVersions("portfolio", currentDocVersion); // currentDocVersion이 현재 포트폴리오 버전을 가리키도록
-
-  showLoading(true, "포트폴리오 요약 및 PDF 생성 중..."); // 로딩 표시
+  showLoading(true, "포트폴리오 요약 및 PDF 생성 중...");
   try {
     const response = await fetch("/api/portfolio_summary", {
       method: "POST",
       body: formData,
     });
-    showLoading(false); // 로딩 숨김
+    showLoading(false);
 
     const result = await response.json();
 
     if (response.ok) {
-      // PDF 다운로드 처리 (기존 로직)
       if (result.download_url) {
-        // 다운로드 URL이 blob이 아니라 실제 URL인 경우
         window.open(result.download_url, "_blank");
         alert("포트폴리오 요약이 완료되었습니다. PDF를 다운로드합니다.");
       } else if (result.pdf_content_base64) {
-        // Base64 인코딩된 PDF 내용이 오는 경우 (Blob 변환)
         const binaryString = atob(result.pdf_content_base64);
         const len = binaryString.length;
         const bytes = new Uint8Array(len);
@@ -216,7 +259,12 @@ export async function handlePortfolioFormSubmit(e) {
         const url = window.URL.createObjectURL(blob);
         const a = document.createElement("a");
         a.href = url;
-        a.download = `portfolio_summary_v${newVersionNumber}.pdf`;
+        const portfolioFileName = pdfInput.files[0]
+          ? pdfInput.files[0].name.replace(/\.pdf$/, "")
+          : "portfolio_summary";
+        a.download = `${portfolioFileName}_summary_v${
+          currentDocVersion + 1
+        }.pdf`;
         document.body.appendChild(a);
         a.click();
         a.remove();
@@ -226,40 +274,76 @@ export async function handlePortfolioFormSubmit(e) {
         alert("PDF 다운로드 정보가 없습니다.");
       }
 
-      // 새 버전 데이터 추가 (포트폴리오 분석 결과 저장)
-      addNewDocumentVersion(
+      // ⭐️ 수정: AI 요약 피드백이 없을 경우 빈 문자열 할당
+      const aiSummary = result.ai_summary || "";
+      const individualFeedbacks = result.individual_feedbacks || {};
+      const embedding = result.new_version_data
+        ? result.new_version_data.embedding
+        : [];
+      const contentHash = result.new_version_data
+        ? result.new_version_data.content_hash
+        : "";
+
+      updateExistingDocumentVersion(
         "portfolio",
-        newVersionNumber,
+        currentDocVersion,
         {
           portfolio_link: linkInput.value.trim(),
           file_name: pdfInput.files[0] ? pdfInput.files[0].name : "",
-        }, // 포트폴리오 내용 (링크, 파일명)
-        result.ai_summary || "요약 피드백 없음", // AI 요약 결과
-        result.individual_feedbacks || {} // ⭐️ 핵심: 포트폴리오의 경우에도 개별 피드백 저장 (없을 경우 빈 객체)
+        },
+        aiSummary,
+        individualFeedbacks,
+        embedding,
+        contentHash
       );
 
-      // 현재 문서 정보 업데이트
-      setCurrentDocInfo("portfolio", newVersionNumber);
+      const nextPortfolioVersionNumber = currentDocVersion + 1;
+      truncateDocumentVersions("portfolio", currentDocVersion);
 
-      // 모달 제목 업데이트
-      setModalTitle(`포트폴리오 편집 (v${newVersionNumber})`);
-
-      // AI 피드백 UI 업데이트
-      setAiFeedback(
-        result.ai_summary || "요약 피드백 없음",
-        result.individual_feedbacks || {},
-        "portfolio"
+      addNewDocumentVersion(
+        "portfolio",
+        nextPortfolioVersionNumber,
+        {
+          portfolio_link: linkInput.value.trim(),
+          file_name: pdfInput.files[0] ? pdfInput.files[0].name : "",
+        },
+        aiSummary,
+        individualFeedbacks,
+        embedding,
+        contentHash
       );
+
+      setCurrentDocInfo("portfolio", nextPortfolioVersionNumber);
+
+      setModalTitle(`포트폴리오 편집 (v${nextPortfolioVersionNumber})`);
+
+      setAiFeedback(aiSummary, individualFeedbacks, "portfolio");
       drawDiagram();
+
+      const nextPortDocVersionData = getDocumentVersionData(
+        "portfolio",
+        nextPortfolioVersionNumber
+      );
+      const schemaResponse = await fetch(
+        "/api/document_schema/portfolio?job_slug=" +
+          jobTitle.replace(/ /g, "-").replace(/\//g, "-").toLowerCase()
+      );
+      const schema = await schemaResponse.json();
+      renderFormFields(schema, nextPortDocVersionData.content);
+      document.getElementById("edit-modal").style.display = "block";
+
+      alert("포트폴리오가 성공적으로 요약되고 다음 버전이 생성되었습니다.");
     } else {
       const resultError = result.error || "알 수 없는 오류";
       alert(`요약 실패: ${resultError}`);
-      setAiFeedback(`오류: ${resultError}`, {}, "portfolio"); // 오류 피드백도 표시
+      setAiFeedback(`오류: ${resultError}`, {}, "portfolio");
     }
   } catch (err) {
-    showLoading(false); // 로딩 숨김
+    showLoading(false);
     console.error("서버 오류:", err);
     alert("포트폴리오 분석 중 서버 오류가 발생했습니다. " + err.message);
-    setAiFeedback(`네트워크 오류: ${err.message}`, {}, "portfolio"); // 오류 피드백 표시
+    setAiFeedback(`네트워크 오류: ${err.message}`, {}, "portfolio");
+  } finally {
+    showLoading(false);
   }
 }
