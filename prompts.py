@@ -1,6 +1,26 @@
 import json
 from typing import Dict, Any, Optional, List, Tuple
 
+def get_company_analysis_prompt(company_name: str) -> Tuple[str, str]:
+    """
+    기업 분석을 위한 OpenAI AI 모델 프롬프트를 생성합니다.
+    """
+    system_instruction = f"""
+당신은 기업 분석 전문가 AI입니다. 사용자가 제시한 기업의 특징, 주요 사업, 핵심 가치, 인재상 등을 종합적으로 분석하고 요약하여 제공해야 합니다.
+**모든 응답 내용은 반드시 한국어로만 작성해야 합니다.**
+기업 분석 정보는 지원자가 자기소개서, 이력서, 포트폴리오를 작성할 때 직무 적합성을 높이는 데 활용될 수 있도록 구체적이고 실질적인 내용을 담고 있어야 합니다.
+응답은 반드시 다음 JSON 형식으로 이루어져야 합니다.
+
+{{
+    "company_summary": "string", // 기업의 주요 사업, 강점 등을 객관적으로 요약
+    "key_values": "string", // 기업의 핵심 가치, 문화, 인재상 등에 대한 분석
+    "competencies_to_highlight": ["string", "string"], // 지원자가 강조하면 좋은 역량
+    "interview_tips": "string" // 면접에 대비하여 준비하면 좋을 점
+}}
+"""
+    user_prompt = f"다음 기업에 대해 분석해주세요: {company_name}"
+    return system_instruction, user_prompt
+
 def get_document_analysis_prompt(
     job_title: str,
     doc_type: str,
@@ -8,7 +28,9 @@ def get_document_analysis_prompt(
     job_competencies: Optional[List[str]] = None,
     previous_document_data: Optional[Dict[str, Any]] = None,
     older_document_data: Optional[Dict[str, Any]] = None,
-    additional_user_context: Optional[str] = None
+    additional_user_context: Optional[str] = None,
+    company_name: Optional[str] = None, # 추가
+    company_analysis: Optional[Dict[str, Any]] = None, # 추가
 ) -> Tuple[str, str]:
     """
     OpenAI AI 모델에 전달할 문서 분석 프롬프트를 생성합니다.
@@ -34,9 +56,18 @@ def get_document_analysis_prompt(
 }}
 모든 문자열 값은 유효한 JSON 문자열이어야 합니다 (예: 개행 문자 및 따옴표 처리).
 """
-
     # --- 사용자 프롬프트 (role: user) ---
     user_prompt_parts = []
+    
+    if company_name and company_analysis:
+        user_prompt_parts.append(f"지원자는 {company_name}의 {job_title} 직무에 지원하고 있습니다.\n")
+        user_prompt_parts.append("\n--- 기업 분석 내용 ---")
+        user_prompt_parts.append(f"**기업 요약:** {company_analysis.get('company_summary', '정보 없음')}")
+        user_prompt_parts.append(f"**핵심 가치/문화:** {company_analysis.get('key_values', '정보 없음')}")
+        user_prompt_parts.append(f"**강조할 역량:** {', '.join(company_analysis.get('competencies_to_highlight', []))}")
+        user_prompt_parts.append(f"**면접 팁:** {company_analysis.get('interview_tips', '정보 없음')}")
+        user_prompt_parts.append("\n기업 분석 내용을 바탕으로 지원자의 문서가 해당 기업에 얼마나 잘 맞는지 고려하여 피드백을 제공해주세요.")
+        
     user_prompt_parts.append(f"Analyzing {doc_type} for the role of: {job_title}\n")
 
     if job_competencies:
@@ -174,21 +205,29 @@ AI는 이 사용자 설명을 고려하여, **실제로 반영되었는지 여�
 - **만약 내용이 존재하더라도 피상적이거나, 직무와 관련성이 떨어지거나, 논리적 흐름이 엉성하거나, 구체적인 사례가 부족하여 이전 버전보다 품질이 낮아졌다고 판단되면, 그 점을 명확히 지적하고 구체적인 개선 방안을 제시해야 합니다.**
 - **모든 피드백과 요약은 반드시 한국어로 작성해주세요.**
 
+**새로운 지침:**
 """)
+
+        if company_name:
+            user_prompt_parts.append(f"- **`reason_for_application` (지원 동기)** 항목의 내용이 분석 대상 기업인 **'{company_name}'**과 관련이 있는지 확인해주세요. 만약 다른 기업명이 언급되어 있거나, 기업명이 불분명할 정도로 일반적인 내용이라면, 지원 동기가 해당 기업에 대한 맞춤형 내용이 아니라는 점을 명확히 지적하고 개선을 위한 구체적인 조언을 제공해야 합니다.")
+        else:
+            user_prompt_parts.append(f"- **`reason_for_application` (지원 동기)** 항목의 내용이 **특정 기업에 한정되지 않고 너무 일반적이거나, 지원하는 직무에 대한 구체성이 부족하다면** 이를 지적하고, 맞춤형 지원 동기를 작성할 수 있도록 조언해주세요.")
+
         for q_info in questions_info:
             user_prompt_parts.append(f"- **{q_info['label']} (`{q_info['name']}`):**")
-            user_prompt_parts.append(f"  - 직무 이해도, 직무 적합성, 회사/산업군 관심, 기여 의지 및 성장 가능성 등을 고려하여 평가합니다. **(내용이 피상적이거나, 단순히 열정만 나열하는 경우 부족하다고 평가)**")
-            user_prompt_parts.append(f"  - 자기 주도성, 학습 능력, 지속적인 성장 의지, 실제 적용 능력, 문제 해결 능력 및 성과 등을 고려하여 평가합니다. **(구체적인 경험, 과정, 결과, 수치가 부족한 경우 부족하다고 평가)**")
-            user_prompt_parts.append(f"  - 팀워크, 협업 능력, 책임감, 갈등 관리 및 조율 능력, 타인에 대한 이해 및 존중 등을 고려하여 평가합니다. **(본인의 역할과 기여가 모호하거나, 갈등 해결 과정이 불분명한 경우 부족하다고 평가)**")
-            user_prompt_parts.append(f"  - 목표 설정 능력, 실행력, 추진력, 문제 해결 능력, 회복 탄력성 및 학습 능력 등을 고려하여 평가합니다. **(도전의 내용이 너무 일반적이거나, 성과가 미미하거나, 배운 점이 추상적인 경우 부족하다고 평가)**")
-            user_prompt_parts.append(f"  - 가치관, 인성, 핵심 역량 형성 과정, 자기 성찰 및 발전 의지, 인생의 전환점 및 중요한 경험 등을 고려하여 평가합니다. **(내용이 교훈적이거나, 직무와 무관한 개인사만 나열되는 경우 부족하다고 평가)**")
-            user_prompt_parts.append(f"  - 구체적인 예시와 함께 개선 방안을 제안해주세요.")
-
+            user_prompt_parts.append(f"  - 직무 이해도, 직무 적합성, 회사/산업군 관심, 기여 의지 및 성장 가능성 등을 고려하여 평가합니다. **(내용이 피상적이거나, 단순히 열정만 나열하는 경우 부족하다고 평가)**")
+            user_prompt_parts.append(f"  - 자기 주도성, 학습 능력, 지속적인 성장 의지, 실제 적용 능력, 문제 해결 능력 및 성과 등을 고려하여 평가합니다. **(구체적인 경험, 과정, 결과, 수치가 부족한 경우 부족하다고 평가)**")
+            user_prompt_parts.append(f"  - 팀워크, 협업 능력, 책임감, 갈등 관리 및 조율 능력, 타인에 대한 이해 및 존중 등을 고려하여 평가합니다. **(본인의 역할과 기여가 모호하거나, 갈등 해결 과정이 불분명한 경우 부족하다고 평가)**")
+            user_prompt_parts.append(f"  - 목표 설정 능력, 실행력, 추진력, 문제 해결 능력, 회복 탄력성 및 학습 능력 등을 고려하여 평가합니다. **(도전의 내용이 너무 일반적이거나, 성과가 미미하거나, 배운 점이 추상적인 경우 부족하다고 평가)**")
+            user_prompt_parts.append(f"  - 가치관, 인성, 핵심 역량 형성 과정, 자기 성찰 및 발전 의지, 인생의 전환점 및 중요한 경험 등을 고려하여 평가합니다. **(내용이 교훈적이거나, 직무와 무관한 개인사만 나열되는 경우 부족하다고 평가)**")
+            user_prompt_parts.append(f"  - 구체적인 예시와 함께 개선 방안을 제안해주세요.")
+        
         user_prompt_parts.append("""
 - 문맥에 맞지 않거나 모호한 부분이 있다면 구체적으로 제시해주세요.
 - 전체적인 일관성과 논리적 흐름에 대한 피드백을 추가해주세요.
 - 답변의 내용이 질문의 의도와 얼마나 부합하는지 평가해주세요.
 """)
+
     elif doc_type == "portfolio_summary_text":
         extracted_text = document_content.get("extracted_text", "")
         if not extracted_text:

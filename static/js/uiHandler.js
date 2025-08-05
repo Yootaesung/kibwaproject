@@ -7,6 +7,9 @@ import {
   aiFeedbackArea,
   loadingOverlay,
   loadingMessage,
+  companyModal,
+  companyLoadingOverlay,
+  companyLoadingMessage,
 } from "./domElements.js";
 import { saveCurrentFormContent } from "./documentData.js";
 
@@ -14,17 +17,26 @@ import { saveCurrentFormContent } from "./documentData.js";
  * 로딩 오버레이를 표시하거나 숨깁니다.
  * @param {boolean} show - true면 표시, false면 숨김
  * @param {string} message - 로딩 메시지
+ * @param {HTMLElement} overlayElement - 로딩 오버레이 요소
+ * @param {HTMLElement} messageElement - 로딩 메시지 요소
  */
-export function showLoading(show, message = "처리 중...") {
+export function showLoading(
+  show,
+  message = "처리 중...",
+  overlayElement,
+  messageElement
+) {
+  const overlay = overlayElement || loadingOverlay;
+  const msgEl = messageElement || loadingMessage;
   if (show) {
-    loadingOverlay.style.display = "flex";
-    if (loadingMessage) {
-      loadingMessage.textContent = message;
+    overlay.style.display = "flex";
+    if (msgEl) {
+      msgEl.textContent = message;
     } else {
-      loadingOverlay.querySelector("p").textContent = message;
+      overlay.querySelector("p").textContent = message;
     }
   } else {
-    loadingOverlay.style.display = "none";
+    overlay.style.display = "none";
   }
 }
 
@@ -42,79 +54,58 @@ export function openEditModal(
   docType = ""
 ) {
   modalTitle.textContent = title;
-
-  // 모달을 열 때 피드백 영역 초기화
-  if (aiOverallFeedbackContent) aiOverallFeedbackContent.textContent = "";
-  if (aiIndividualFeedbacksContainer)
-    aiIndividualFeedbacksContainer.innerHTML = "";
-  if (aiFeedbackArea) aiFeedbackArea.style.display = "none";
-
-  // 모달을 열 때 기존 피드백이 있다면 바로 표시
-  if (overallFeedback || Object.keys(individualFeedbacks).length > 0) {
-    setAiFeedback(overallFeedback, individualFeedbacks, docType);
-  }
-
+  setAiFeedback(overallFeedback, individualFeedbacks, docType);
   editModal.style.display = "block";
 }
 
+/**
+ * 모달을 닫습니다.
+ */
 export function closeEditModal() {
   saveCurrentFormContent();
   editModal.style.display = "none";
-
-  // 닫을 때 피드백 내용도 초기화
   if (aiOverallFeedbackContent) aiOverallFeedbackContent.textContent = "";
   if (aiIndividualFeedbacksContainer)
     aiIndividualFeedbacksContainer.innerHTML = "";
   if (aiFeedbackArea) aiFeedbackArea.style.display = "none";
 }
 
-export function setModalTitle(title) {
-  modalTitle.textContent = title;
-}
-
 /**
- * AI 피드백을 UI에 설정합니다.
- * @param {string} overallFeedback - AI의 전체적인 피드백 문자열입니다.
- * @param {object} individualFeedbacks - 각 항목별 개별 피드백을 담은 객체입니다. (예: {field_name: "feedback"})
- * @param {string} docType - 현재 문서 타입 (예: 'cover_letter', 'resume', 'portfolio')
+ * AI 피드백 내용을 모달에 설정합니다.
+ * @param {string} overallFeedback - 전체 피드백
+ * @param {object} individualFeedbacks - 개별 항목 피드백 객체
+ * @param {string} docType - 문서 타입 ('resume', 'cover_letter', 'portfolio')
  */
-export function setAiFeedback(
-  overallFeedback,
-  individualFeedbacks = {},
-  docType
-) {
-  // ⭐️ 수정: DOM 요소가 유효한지 체크
-  if (aiOverallFeedbackContent) {
-    aiOverallFeedbackContent.textContent =
-      overallFeedback || "종합 피드백이 제공되지 않았습니다.";
+export function setAiFeedback(overallFeedback, individualFeedbacks, docType) {
+  if (
+    !aiOverallFeedbackContent ||
+    !aiIndividualFeedbacksContainer ||
+    !aiFeedbackArea
+  ) {
+    console.error("AI feedback elements not found.");
+    return;
   }
 
-  if (aiIndividualFeedbacksContainer) {
-    aiIndividualFeedbacksContainer.innerHTML = "";
-  }
+  aiOverallFeedbackContent.textContent = overallFeedback;
 
+  aiIndividualFeedbacksContainer.innerHTML = "";
   if (
     Object.keys(individualFeedbacks).length > 0 &&
     (docType === "cover_letter" || docType === "resume")
   ) {
     const qaLabels = {
-      reason_for_application: "지원 이유",
-      expertise_experience: "전문성과 경험",
-      collaboration_experience: "협업 경험",
-      challenging_goal_experience: "도전적 목표 달성 경험",
-      growth_process: "성장 과정",
+      // 이력서 항목
       education_history: "학력",
       career_history: "경력",
-      certifications: "보유 자격증",
-      awards_activities: "수상 내역 및 대외활동",
-      skills_tech: "보유 기술 스택",
-      name: "이름",
-      email: "이메일",
-      phone: "연락처",
-      career_summary: "경력 요약",
-      experience: "경력",
-      skills: "보유 기술",
-      projects: "프로젝트",
+      certifications: "자격증",
+      awards_activities: "수상/대외활동",
+      skills_tech: "기술 스택",
+      // 자기소개서 항목
+      reason_for_application: "지원 동기",
+      expertise_experience: "전문성 경험",
+      collaboration_experience: "협업 경험",
+      challenging_goal_experience: "도전적 경험",
+      growth_process: "성장 과정",
       languages: "어학 능력",
     };
 
@@ -151,9 +142,19 @@ export function setAiFeedback(
   }
 
   if (aiFeedbackArea) {
-    aiFeedbackArea.style.display =
-      overallFeedback || Object.keys(individualFeedbacks).length > 0
-        ? "block"
-        : "none";
+    aiFeedbackArea.style.display = overallFeedback ? "block" : "none";
   }
+}
+
+// 기업 분석 모달 관련 함수
+export function openCompanyModal() {
+  companyModal.style.display = "block";
+}
+
+export function closeCompanyModal() {
+  companyModal.style.display = "none";
+}
+
+export function setModalTitle(title) {
+  modalTitle.textContent = title;
 }

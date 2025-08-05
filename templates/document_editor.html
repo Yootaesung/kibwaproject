@@ -12,8 +12,12 @@
       <p class="job-description">현재 직무: <strong>{{ job_title }}</strong></p>
 
       <div id="document-diagram">
-        <div class="diagram-node job-node" data-doc-type="job">
-          {{ job_title }}
+        <div
+          class="diagram-node company-node"
+          data-doc-type="company"
+          data-korean-name="기업"
+        >
+          기업
         </div>
         <div class="initial-documents">
           <div
@@ -74,8 +78,55 @@
           </div>
         </div>
       </div>
-    </div>
 
-    <script src="/static/js/main.js" type="module" defer></script>
+      <div id="company-modal" class="modal">
+        <div class="modal-content">
+          <span class="close-button" id="close-company-modal">&times;</span>
+          <h2>기업 분석</h2>
+          <div class="modal-body-container">
+            <div id="company-form">
+              <div class="input-group">
+                <label for="company-name-input">지원 기업명</label>
+                <input
+                  type="text"
+                  id="company-name-input"
+                  placeholder="기업명을 입력하세요."
+                />
+              </div>
+              <button
+                id="analyze-company-button"
+                class="submit-button"
+                type="button"
+              >
+                기업 분석 및 저장
+              </button>
+            </div>
+            <div
+              id="company-analysis-area"
+              class="ai-feedback"
+              style="display: none"
+            >
+              <h3>AI 기업 분석 결과</h3>
+              <div id="company-analysis-text"></div>
+            </div>
+          </div>
+          <div
+            id="company-loading-overlay"
+            class="loading-overlay"
+            style="display: none"
+          >
+            <div class="spinner"></div>
+            <p id="company-loading-message">AI가 기업을 분석 중...</p>
+          </div>
+        </div>
+      </div>
+    </div>
+    <script src="/static/js/domElements.js" type="module"></script>
+    <script src="/static/js/documentData.js" type="module"></script>
+    <script src="/static/js/uiHandler.js" type="module"></script>
+    <script src="/static/js/formRenderer.js" type="module"></script>
+    <script src="/static/js/formSubmitHandler.js" type="module"></script>
+    <script src="/static/js/diagramRenderer.js" type="module"></script>
+    <script src="/static/js/main.js" type="module"></script>
   </body>
 </html>

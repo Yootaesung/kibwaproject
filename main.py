@@ -13,7 +13,7 @@ import hashlib
 import tempfile
 import PyPDF2
 from job_data import JOB_CATEGORIES, JOB_DETAILS, get_job_document_schema
-from prompts import get_document_analysis_prompt
+from prompts import get_document_analysis_prompt, get_company_analysis_prompt
 from openai import OpenAI
 from dotenv import load_dotenv
 from PyPDF2 import PdfReader
@@ -34,6 +34,10 @@ app = FastAPI()
 
 DATA_DIR = os.path.join(os.path.dirname(__file__), "data")
 os.makedirs(DATA_DIR, exist_ok=True)
+COMPANIES_DATA_DIR = os.path.join(DATA_DIR, "companies")
+os.makedirs(COMPANIES_DATA_DIR, exist_ok=True)
+# 기업 분석 파일 저장을 위한 고정 파일명 추가
+COMPANY_ANALYSIS_FILE = os.path.join(COMPANIES_DATA_DIR, "current_company_analysis.json")
 
 app.mount("/static", StaticFiles(directory="static"), name="static")
 app.mount("/data", StaticFiles(directory=DATA_DIR), name="data")
@@ -44,6 +48,7 @@ class AnalyzeDocumentRequest(BaseModel):
     document_content: Dict[str, Any]
     version: int
     feedback_reflection: Optional[str] = None
+    company_name: Optional[str] = None
 
 class SaveDocumentRequest(BaseModel):
     job_slug: str
@@ -53,14 +58,19 @@ class SaveDocumentRequest(BaseModel):
     feedback: str
     individual_feedbacks: Dict[str, str] = {}
 
-# get_ai_feedback 함수 정의
+class AnalyzeCompanyRequest(BaseModel):
+    company_name: str
+
+# get_ai_feedback 함수 정의 (수정)
 async def get_ai_feedback(
     job_title: str,
     doc_type: str,
     document_content: Dict[str, Any],
     previous_document_data: Optional[Dict[str, Any]] = None,
     older_document_data: Optional[Dict[str, Any]] = None,
-    additional_user_context: Optional[str] = None
+    additional_user_context: Optional[str] = None,
+    company_name: Optional[str] = None,
+    company_analysis: Optional[Dict[str, Any]] = None,
 ) -> JSONResponse:
     try:
         job_detail = JOB_DETAILS.get(job_title)
@@ -73,11 +83,13 @@ async def get_ai_feedback(
             job_competencies=job_competencies_list,
             previous_document_data=previous_document_data,
             older_document_data=older_document_data,
-            additional_user_context=additional_user_context
+            additional_user_context=additional_user_context,
+            company_name=company_name,
+            company_analysis=company_analysis,
         )
         
-        print(f"Generated System Instruction for {doc_type} (Job: {job_title}):\n{system_instruction[:500]}...")
-        print(f"Generated User Prompt for {doc_type} (Job: {job_title}):\n{user_prompt[:500]}...")
+        print(f"Generated System Instruction for {doc_type} (Job: {job_title}, Company: {company_name}):\n{system_instruction[:500]}...")
+        print(f"Generated User Prompt for {doc_type} (Job: {job_title}, Company: {company_name}):\n{user_prompt[:500]}...")
 
         if user_prompt.startswith("오류:"):
             return JSONResponse(content={"error": user_prompt}, status_code=400)
@@ -109,7 +121,6 @@ async def get_ai_feedback(
                 status_code=500
             )
 
-        # 수정된 부분: summary도 함께 가져옵니다.
         summary_text = parsed_feedback.get("summary", "요약 내용을 생성할 수 없습니다.")
         overall_feedback = parsed_feedback.get("overall_feedback", "AI 피드백을 생성하는 데 문제가 발생했습니다.")
         individual_feedbacks = parsed_feedback.get("individual_feedbacks", {})
@@ -117,7 +128,6 @@ async def get_ai_feedback(
         if "찾을 수 없다" in overall_feedback or "유효한 포트폴리오 내용을 찾을 수 없" in overall_feedback or "unable to access external URLs" in overall_feedback:
             return JSONResponse(content={"error": overall_feedback}, status_code=400)
 
-        # 수정된 반환 형식: summary도 함께 반환합니다.
         return JSONResponse(content={
             "summary": summary_text,
             "overall_feedback": overall_feedback,
@@ -128,7 +138,7 @@ async def get_ai_feedback(
         print(traceback.format_exc())
         return JSONResponse(content={"error": f"AI 요약 오류: {e}"}, status_code=500)
 
-# get_embedding 함수 정의
+# get_embedding 함수 정의 (기존과 동일)
 async def get_embedding(text: str) -> List[float]:
     try:
         text = text.replace("\n", " ")
@@ -138,7 +148,7 @@ async def get_embedding(text: str) -> List[float]:
         print(f"Error generating embedding: {e}")
         raise HTTPException(status_code=500, detail=f"Embedding generation failed: {e}")
 
-# _cosine_similarity 함수 정의
+# _cosine_similarity 함수 정의 (기존과 동일)
 def _cosine_similarity(vec1: List[float], vec2: List[float]) -> float:
     if not vec1 or not vec2 or len(vec1) != len(vec2):
         return 0.0
@@ -151,10 +161,43 @@ def _cosine_similarity(vec1: List[float], vec2: List[float]) -> float:
         return 0.0
     return dot_product / (magnitude1 * magnitude2)
 
-# calculate_content_hash 함수 정의
+# calculate_content_hash 함수 정의 (기존과 동일)
 def calculate_content_hash(content: Dict[str, Any]) -> str:
     sorted_items_str = json.dumps(content, ensure_ascii=False, sort_keys=True)
     return hashlib.sha256(sorted_items_str.encode('utf-8')).hexdigest()
+
+# 기업 분석 파일 로드 함수 (수정)
+async def load_company_analysis(company_name: str) -> Optional[Dict[str, Any]]:
+    # 고정된 파일명 사용
+    file_path = COMPANY_ANALYSIS_FILE
+    if os.path.exists(file_path):
+        async with aiofiles.open(file_path, 'r', encoding='utf-8') as f:
+            content = await f.read()
+        loaded_analysis = json.loads(content)
+        # 파일에 저장된 기업명과 요청된 기업명이 일치하는지 확인
+        if loaded_analysis.get("company_name") == company_name:
+            return loaded_analysis
+    return None
+
+# --- NEW: Last company analysis loading endpoint ---
+async def load_last_company_analysis_from_file() -> Optional[Dict[str, Any]]:
+    """Loads the last saved company analysis from the fixed file."""
+    if os.path.exists(COMPANY_ANALYSIS_FILE):
+        try:
+            async with aiofiles.open(COMPANY_ANALYSIS_FILE, 'r', encoding='utf-8') as f:
+                content = await f.read()
+                return json.loads(content)
+        except (json.JSONDecodeError, FileNotFoundError) as e:
+            print(f"Error loading last company analysis: {e}")
+    return None
+
+@app.get("/api/load_last_company_analysis", response_class=JSONResponse)
+async def get_last_company_analysis():
+    """Returns the last saved company analysis data, if available."""
+    last_analysis = await load_last_company_analysis_from_file()
+    if last_analysis:
+        return JSONResponse(content=last_analysis)
+    return JSONResponse(content={})
 
 # --- FastAPI 엔드포인트 ---
 @app.get("/", response_class=HTMLResponse)
@@ -175,7 +218,7 @@ async def get_document_editor_page(request: Request, job_slug: str):
                 break
         if job_title:
             break
-
+    
     if not job_title:
         print(f"Job not found for slug: {decoded_job_slug}")
         raise HTTPException(status_code=404, detail=f"Job not found: {decoded_job_slug}")
@@ -383,6 +426,56 @@ async def retrieve_relevant_feedback_history(
     print(f"Finished retrieve_relevant_feedback_history. Found {len(retrieved_history)} relevant entries.")
     return retrieved_history
 
+# 새로운 기업 분석 엔드포인트
+@app.post("/api/analyze_company", response_class=JSONResponse)
+async def analyze_company_endpoint(request_data: AnalyzeCompanyRequest):
+    company_name = request_data.company_name
+    if not company_name:
+        raise HTTPException(status_code=400, detail="기업명을 입력해주세요.")
+
+    try:
+        # 이전에 분석한 기업 정보가 있는지 확인
+        existing_analysis = await load_company_analysis(company_name)
+        if existing_analysis:
+            print(f"Using cached analysis for company: {company_name}")
+            return JSONResponse(content={
+                "message": f"'{company_name}' 기업 분석을 성공적으로 불러왔습니다.",
+                "company_analysis": existing_analysis
+            })
+
+        # 새로운 기업 분석 프롬프트 생성 및 AI 요청
+        system_instruction, user_prompt = get_company_analysis_prompt(company_name)
+        messages_for_ai = [
+            {"role": "system", "content": system_instruction},
+            {"role": "user", "content": user_prompt},
+        ]
+        
+        response = client.chat.completions.create(
+            model=OPENAI_MODEL,
+            messages=messages_for_ai,
+            response_format={"type": "json_object"}
+        )
+        
+        ai_raw_response = response.choices[0].message.content.strip()
+        parsed_analysis = json.loads(ai_raw_response)
+
+        # 분석 결과에 기업명을 추가
+        parsed_analysis["company_name"] = company_name
+        
+        # 분석 결과를 고정된 단일 파일에 저장 (기존 파일 덮어쓰기)
+        file_path = COMPANY_ANALYSIS_FILE
+        async with aiofiles.open(file_path, 'w', encoding='utf-8') as f:
+            await f.write(json.dumps(parsed_analysis, ensure_ascii=False, indent=4))
+        
+        return JSONResponse(content={
+            "message": f"'{company_name}' 기업 분석을 성공적으로 완료했습니다.",
+            "company_analysis": parsed_analysis
+        })
+
+    except Exception as e:
+        print(traceback.format_exc())
+        raise HTTPException(status_code=500, detail=f"기업 분석 중 오류가 발생했습니다: {e}")
+
 @app.post("/api/analyze_document/{doc_type}")
 async def analyze_document_endpoint(
     doc_type: str, request_data: AnalyzeDocumentRequest
@@ -392,6 +485,15 @@ async def analyze_document_endpoint(
         doc_content_dict = request_data.document_content
         new_version_number = request_data.version
         feedback_reflection = request_data.feedback_reflection
+        company_name = request_data.company_name
+        
+        company_analysis = None
+        if company_name:
+            company_analysis = await load_company_analysis(company_name)
+            if not company_analysis:
+                # 기업 분석 정보가 없는 경우, 새로 분석하는 것을 고려하거나 경고를 반환할 수 있음
+                # 현재는 None으로 두고 진행
+                print(f"Warning: No analysis found for company '{company_name}'. Proceeding with job-only feedback.")
 
         job_slug = job_title.replace(" ", "-").replace("/", "-").lower()
 
@@ -418,7 +520,9 @@ async def analyze_document_endpoint(
             doc_content_dict,
             previous_document_data=previous_document_data,
             older_document_data=older_document_data,
-            additional_user_context=feedback_reflection
+            additional_user_context=feedback_reflection,
+            company_name=company_name,
+            company_analysis=company_analysis
         )
         
         if feedback_response_json.status_code != 200:
@@ -426,7 +530,6 @@ async def analyze_document_endpoint(
         
         feedback_content = json.loads(feedback_response_json.body.decode('utf-8'))
         
-        # 수정: summary와 overall_feedback을 각각 가져옵니다.
         overall_ai_feedback = feedback_content.get("overall_feedback")
         ai_summary = feedback_content.get("summary", "")
         individual_ai_feedbacks = feedback_content.get("individual_feedbacks", {})
@@ -449,7 +552,6 @@ async def analyze_document_endpoint(
                 f"성장 과정: {doc_content_dict.get('growth_process', '')}"
             )
         else:
-            # 포트폴리오의 경우, AI가 생성한 요약을 임베딩에 사용합니다.
             text_for_current_embedding = ai_summary
 
         current_doc_embedding = await get_embedding(text_for_current_embedding)
@@ -464,7 +566,8 @@ async def analyze_document_endpoint(
             "feedback": overall_ai_feedback,
             "individual_feedbacks": individual_ai_feedbacks,
             "embedding": current_doc_embedding,
-            "content_hash": current_content_hash
+            "content_hash": current_content_hash,
+            "company_name": company_name,
         }
 
         await save_document_to_file_system(doc_to_save)
@@ -489,7 +592,8 @@ async def portfolio_summary(
     portfolio_link: str = Form(None),
     job_title: str = Form(...),
     version: int = Form(1), 
-    feedback_reflection: Optional[str] = Form(None)
+    feedback_reflection: Optional[str] = Form(None),
+    company_name: Optional[str] = Form(None)
 ):
     doc_type_for_prompt = ""
     prompt_content_for_ai = {}
@@ -537,13 +641,22 @@ async def portfolio_summary(
         previous_document_data = relevant_history_entries[0] if relevant_history_entries else None
         older_document_data = relevant_history_entries[1] if len(relevant_history_entries) > 1 else None
 
+        company_analysis = None
+        if company_name:
+            company_analysis = await load_company_analysis(company_name)
+            if not company_analysis:
+                print(f"Warning: No analysis found for company '{company_name}'. Proceeding with job-only feedback.")
+
+
         ai_response_json = await get_ai_feedback(
             job_title, 
             doc_type_for_prompt, 
             prompt_content_for_ai,
             previous_document_data=previous_document_data,
             older_document_data=older_document_data,
-            additional_user_context=feedback_reflection
+            additional_user_context=feedback_reflection,
+            company_name=company_name,
+            company_analysis=company_analysis
         )
         
         if ai_response_json.status_code != 200:
@@ -565,7 +678,6 @@ async def portfolio_summary(
         raise HTTPException(status_code=500, detail=f"AI 요약 오류: {e}")
 
     try:
-        # PDF 생성: 피드백 내용은 제외하고 요약본만 포함
         pdf = FPDF()
         pdf.add_page()
         pdf.set_auto_page_break(auto=True, margin=15)
@@ -586,14 +698,6 @@ async def portfolio_summary(
         pdf.multi_cell(0, 10, txt=overall_summary_text)
         pdf.ln(10)
         
-        # 이전 코드에서 피드백 내용을 PDF에 추가하는 부분은 삭제됨
-        # pdf.set_font('NotoSansKR', '', 14)
-        # pdf.cell(0, 10, "▶ AI 피드백", ln=1, align='L')
-        # pdf.set_font('NotoSansKR', '', 12)
-        # pdf.multi_cell(0, 10, txt=overall_feedback_text)
-        # pdf.ln(10)
-
-        # PDF 파일을 메모리에서 생성 후 파일 시스템에 저장
         job_slug = job_title.replace(" ", "-").replace("/", "-").lower()
         doc_type_for_save = "portfolio"
         job_data_dir = os.path.join(DATA_DIR, job_slug, doc_type_for_save)
@@ -603,30 +707,28 @@ async def portfolio_summary(
         pdf_file_path = os.path.join(job_data_dir, pdf_filename)
         pdf.output(pdf_file_path)
         
-        # 파일 시스템에 포트폴리오 정보 저장
-        summary_embedding = await get_embedding(overall_summary_text) 
+        summary_embedding = await get_embedding(overall_summary_text)
         summary_content_hash = calculate_content_hash({"summary": overall_summary_text})
 
         doc_to_save = {
             "job_title": job_title,
-            "doc_type": doc_type_for_save, 
+            "doc_type": doc_type_for_save,
             "version": version,
             "content": {
                 "portfolio_pdf_filename": portfolio_pdf.filename if portfolio_pdf else None,
                 "portfolio_link": portfolio_link,
                 "summary_type": doc_type_for_prompt,
                 "summary": overall_summary_text,
-                # 다운로드 링크 수정: download_pdf_file 엔드포인트를 가리키도록 함
                 "download_pdf_url": f"/api/download_pdf/{job_slug}/{doc_type_for_save}/{pdf_filename}"
             },
             "feedback": overall_feedback_text,
             "individual_feedbacks": individual_feedbacks,
             "embedding": summary_embedding,
-            "content_hash": summary_content_hash
+            "content_hash": summary_content_hash,
+            "company_name": company_name,
         }
         await save_document_to_file_system(doc_to_save)
         
-        # 클라이언트에게 PDF 다운로드 URL을 포함한 JSON 응답 반환
         return JSONResponse(content={
             "message": "AI 요약본이 생성되었습니다.",
             "overall_summary": overall_summary_text,
@@ -639,7 +741,6 @@ async def portfolio_summary(
         print(traceback.format_exc())
         raise HTTPException(status_code=500, detail=f"PDF 생성 및 저장 오류: {e}")
 
-# --- 새로운 엔드포인트 추가: PDF 다운로드 처리 ---
 @app.get("/api/download_pdf/{job_slug}/{doc_type}/{filename}")
 async def download_pdf_file(job_slug: str, doc_type: str, filename: str):
     file_path = os.path.join(DATA_DIR, job_slug, doc_type, filename)

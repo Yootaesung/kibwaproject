@@ -5,11 +5,9 @@ export const editModal = document.getElementById("edit-modal");
 export const modalTitle = document.getElementById("modal-title");
 export const formFields = document.getElementById("form-fields");
 
-// ⭐️ 중요: HTML ID와 정확히 일치하는지 확인
 export const aiOverallFeedbackContent = document.getElementById(
   "ai-overall-feedback-content"
 );
-// ⭐️ 중요: HTML ID와 정확히 일치하는지 확인
 export const aiIndividualFeedbacksContainer = document.getElementById(
   "ai-individual-feedbacks-container"
 );
@@ -19,3 +17,25 @@ export const documentForm = document.getElementById("document-form");
 export const loadingOverlay = document.getElementById("loading-overlay");
 export const loadingMessage = document.getElementById("loading-message");
 export const diagramContainer = document.getElementById("document-diagram");
+
+// 기업 분석 모달 관련 DOM 요소 추가
+export const companyModal = document.getElementById("company-modal");
+export const companyNameInput = document.getElementById("company-name-input");
+export const analyzeCompanyButton = document.getElementById(
+  "analyze-company-button"
+);
+export const companyAnalysisArea = document.getElementById(
+  "company-analysis-area"
+);
+export const companyAnalysisText = document.getElementById(
+  "company-analysis-text"
+);
+export const companyLoadingOverlay = document.getElementById(
+  "company-loading-overlay"
+);
+export const companyLoadingMessage = document.getElementById(
+  "company-loading-message"
+);
+export const closeCompanyModalButton = document.getElementById(
+  "close-company-modal"
+);

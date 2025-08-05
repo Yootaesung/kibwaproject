@@ -17,8 +17,8 @@ export function initializeDefaultDocumentData() {
         koreanName: "이력서",
         feedback: "",
         individual_feedbacks: {},
-        embedding: [], // AI 분석 시 생성될 임베딩 필드
-        content_hash: "", // AI 분석 시 생성될 콘텐츠 해시 필드
+        embedding: [],
+        content_hash: "",
       },
     ],
     cover_letter: [
@@ -56,7 +56,9 @@ function getKoreanName(docType) {
     case "cover_letter":
       return "자기소개서";
     case "portfolio":
-      return "포트폴리오"; // 필요한 경우 추가적인 문서 타입 처리
+      return "포트폴리오";
+    case "company":
+      return "기업"; // 'company' 타입 추가
     default:
       return docType;
   }
@@ -100,7 +102,7 @@ export function updateExistingDocumentVersion(
       docToUpdate.feedback = feedback;
       docToUpdate.individual_feedbacks = individualFeedbacks;
       docToUpdate.embedding = embedding;
-      docToUpdate.content_hash = contentHash; // ⭐️ 수정된 부분: 모든 문서의 다이어그램 제목에서 피드백 제거
+      docToUpdate.content_hash = contentHash;
       docToUpdate.displayContent = `${docToUpdate.koreanName} (v${version})`;
       console.log(`Updated document ${docType} v${version}`);
     } else {
@@ -140,18 +142,16 @@ export function addNewDocumentVersion(
     individual_feedbacks: individualFeedbacks,
     embedding: embedding,
     content_hash: contentHash,
-    koreanName: koreanName, // ⭐️ 수정된 부분: 모든 문서의 다이아그램 제목에서 피드백 제거
+    koreanName: koreanName,
     displayContent: `${koreanName} (v${version})`,
   };
 
-  documentData[docType].push(newVersionData); // 버전을 기준으로 정렬하여 항상 오름차순 유지
+  documentData[docType].push(newVersionData);
   documentData[docType].sort((a, b) => a.version - b.version);
   console.log(`Added new document version ${docType} v${version}`);
 }
 
 export function truncateDocumentVersions(docType, version) {
-  // 지정된 버전(포함) 이후의 모든 버전을 잘라냅니다.
-  // 예를 들어, v2에서 새로운 분석을 하면 v2 이후의 v3, v4 등을 잘라냅니다.
   documentData[docType] = documentData[docType].slice(0, version + 1);
 }
 
@@ -162,10 +162,6 @@ export function getDocumentVersionData(docType, version) {
   return documentData[docType].find((d) => d.version === version);
 }
 
-// saveCurrentFormContent 함수는 현재 이 시나리오에서 직접 사용되지 않지만,
-// 향후 자동 저장 등의 기능을 위해 유지될 수 있습니다.
-// 이 함수는 DOM을 직접 조작하므로, 다른 모듈에서 폼 데이터를 가져오는 방식과 중복되거나 충돌할 수 있습니다.
-// 현재 `formSubmitHandler.js`에서 폼 데이터를 직접 수집하므로 이 함수의 직접적인 호출은 필요 없습니다.
 export function saveCurrentFormContent() {
   if (
     !currentDocType ||
@@ -181,21 +177,20 @@ export function saveCurrentFormContent() {
 
   if (versionToUpdate) {
     const docContent = {};
-    const formFieldsContainer = document.getElementById("form-fields"); // domElements에서 가져오는 것이 더 좋음 // 폼 필드에서 데이터를 가져오는 일반화된 로직 (formSubmitHandler와 유사하게)
+    const formFieldsContainer = document.getElementById("form-fields");
 
     formFieldsContainer
       .querySelectorAll("textarea, input:not([type='file'])")
       .forEach((field) => {
         if (field.classList.contains("array-input-field")) {
-          // 배열 필드는 특별 처리 (예: education, experience)
           const parentDiv = field.closest(".array-field-container");
-          const arrayFieldName = parentDiv.dataset.arrayFieldName || field.name; // data-array-field-name 사용 또는 name 속성 사용
+          const arrayFieldName = parentDiv.dataset.arrayFieldName || field.name;
           if (!docContent[arrayFieldName]) {
             docContent[arrayFieldName] = [];
           }
           const itemInputs = parentDiv.querySelectorAll(
             ".array-item input, .array-item textarea"
-          ); // array-item 내부의 input/textarea 모두
+          );
           const itemValues = Array.from(itemInputs)
             .map((input) => input.value.trim())
             .filter((v) => v);

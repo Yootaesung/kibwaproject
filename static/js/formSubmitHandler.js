@@ -1,5 +1,5 @@
 // static/js/formSubmitHandler.js
-import { formFields, documentForm } from "./domElements.js";
+import { formFields, documentForm, companyNameInput } from "./domElements.js";
 import {
   jobTitle,
   currentDocType,
@@ -103,6 +103,9 @@ export async function handleDocumentFormSubmit(e) {
     const feedbackReflection =
       document.getElementById("feedback-reflection-input")?.value || "";
 
+    // 기업명 입력 필드에서 값을 가져옵니다.
+    const companyName = companyNameInput.value.trim();
+
     const response = await fetch(`/api/analyze_document/${currentDocType}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -111,6 +114,8 @@ export async function handleDocumentFormSubmit(e) {
         document_content: docContent,
         version: currentDocVersion,
         feedback_reflection: feedbackReflection,
+        // 이 부분을 추가하여 기업명을 API 요청에 포함시킵니다.
+        company_name: companyName,
       }),
     });
 
@@ -123,7 +128,6 @@ export async function handleDocumentFormSubmit(e) {
       return;
     }
 
-    // ⭐️ 중요 수정: 서버 응답의 "ai_feedback" 키를 사용합니다.
     const overallAiFeedback = result.ai_feedback || "";
     const individualAiFeedbacks = result.individual_feedbacks || {};
     const newEmbedding = result.new_version_data
@@ -133,7 +137,6 @@ export async function handleDocumentFormSubmit(e) {
       ? result.new_version_data.content_hash
       : "";
 
-    // 현재 버전 (vN)의 내용을 업데이트
     updateExistingDocumentVersion(
       currentDocType,
       currentDocVersion,
@@ -144,12 +147,10 @@ export async function handleDocumentFormSubmit(e) {
       newContentHash
     );
 
-    // 버전 히스토리를 현재 버전까지로 정리
     truncateDocumentVersions(currentDocType, currentDocVersion);
 
     const nextVersionNumber = currentDocVersion + 1;
 
-    // 다음 버전 (vN+1)을 생성하고, vN의 내용 및 피드백을 복사
     addNewDocumentVersion(
       currentDocType,
       nextVersionNumber,
@@ -160,13 +161,10 @@ export async function handleDocumentFormSubmit(e) {
       newContentHash
     );
 
-    // 현재 문서 정보(타입, 버전)를 업데이트
     setCurrentDocInfo(currentDocType, nextVersionNumber);
 
-    // 다이어그램을 다시 그립니다.
     drawDiagram();
 
-    // 다음 버전에 대한 스키마를 가져옵니다.
     const schemaResponse = await fetch(
       "/api/document_schema/" +
         currentDocType +
@@ -175,10 +173,8 @@ export async function handleDocumentFormSubmit(e) {
     );
     const schema = await schemaResponse.json();
 
-    // 폼 필드를 다음 버전의 내용으로 렌더링
     renderFormFields(schema, docContent);
 
-    // API 응답에서 받은 피드백을 직접 UI에 설정합니다.
     setModalTitle(
       `${getKoreanNameForDisplay(currentDocType)} (v${nextVersionNumber})`
     );
@@ -198,7 +194,6 @@ export async function handleDocumentFormSubmit(e) {
 
 /**
  * 포트폴리오 폼 제출을 처리합니다.
- * 이 함수도 handleDocumentFormSubmit과 유사한 로직으로 수정되어야 합니다.
  */
 export async function handlePortfolioFormSubmit(e) {
   e.preventDefault();
@@ -206,6 +201,12 @@ export async function handlePortfolioFormSubmit(e) {
   const linkInput = document.querySelector('input[name="portfolio_link"]');
   const formData = new FormData();
   formData.append("job_title", jobTitle);
+
+  // 포트폴리오 분석에도 기업명 정보를 추가합니다.
+  const companyName = companyNameInput.value.trim();
+  if (companyName) {
+    formData.append("company_name", companyName);
+  }
 
   let hasPortfolioContent = false;
 

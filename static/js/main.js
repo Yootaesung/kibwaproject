@@ -8,6 +8,14 @@ import {
 } from "./documentData.js";
 import { showLoading, closeEditModal } from "./uiHandler.js";
 import { drawDiagram } from "./diagramRenderer.js";
+import {
+  companyModal,
+  companyNameInput,
+  analyzeCompanyButton,
+  companyAnalysisText,
+  companyLoadingOverlay,
+  companyLoadingMessage,
+} from "./domElements.js";
 
 // DOM이 완전히 로드되면 실행됩니다.
 document.addEventListener("DOMContentLoaded", async () => {
@@ -21,7 +29,7 @@ document.addEventListener("DOMContentLoaded", async () => {
       const loadedData = await response.json();
 
       // Initialize documentData structure
-      documentData.resume = []; // 기존 documentData 객체를 재할당하지 않고 속성만 초기화
+      documentData.resume = [];
       documentData.cover_letter = [];
       documentData.portfolio = [];
 
@@ -32,9 +40,8 @@ document.addEventListener("DOMContentLoaded", async () => {
             ? "이력서"
             : docType === "cover_letter"
             ? "자기소개서"
-            : "포트폴리오"; // Added portfolio to koreanName logic
+            : "포트폴리오";
         if (loadedDocs && loadedDocs.length > 0) {
-          // If loaded docs do not start with version 0, prepend an empty v0 locally
           if (loadedDocs[0].version > 0) {
             documentData[docType].push({
               version: 0,
@@ -44,16 +51,14 @@ document.addEventListener("DOMContentLoaded", async () => {
               feedback: "",
             });
           }
-          // Append all loaded versions from DB
           loadedDocs.forEach((doc) => {
             documentData[docType].push({
-              ...doc, // spread operator to copy all properties
-              koreanName: koreanName, // ensure koreanName is set
-              displayContent: `${koreanName} (v${doc.version})`, // ensure displayContent is set
+              ...doc,
+              koreanName: koreanName,
+              displayContent: `${koreanName} (v${doc.version})`,
             });
           });
         } else {
-          // If no documents loaded from DB, initialize with an empty v0
           documentData[docType].push({
             version: 0,
             content: {},
@@ -64,24 +69,21 @@ document.addEventListener("DOMContentLoaded", async () => {
         }
       };
 
-      // Process resume and cover_letter data
       processLoadedDocs("resume", loadedData.resume);
       processLoadedDocs("cover_letter", loadedData.cover_letter);
       processLoadedDocs("portfolio", loadedData.portfolio);
     } else {
       console.error("Failed to load documents from DB:", await response.text());
-      // Fallback to initial v0 for all if loading fails entirely
-      initializeDefaultDocumentData(); // This function already creates empty v0 for all types
+      initializeDefaultDocumentData();
     }
   } catch (error) {
     console.error("Error fetching documents on load:", error);
-    // Fallback to initial v0 for all if fetching fails entirely
-    initializeDefaultDocumentData(); // This function already creates empty v0 for all types
+    initializeDefaultDocumentData();
   } finally {
     showLoading(false);
   }
 
-  drawDiagram(); // 초기 다이어그램 그리기
+  drawDiagram();
 
   // 팝업창 닫기 버튼 클릭 이벤트
   document.querySelector(".close-button").onclick = () => {
@@ -90,9 +92,134 @@ document.addEventListener("DOMContentLoaded", async () => {
 
   // 모달 외부 클릭 시 닫기 이벤트
   window.onclick = (event) => {
-    const editModal = document.getElementById("edit-modal"); // domElements에서 가져와도 됨
+    const editModal = document.getElementById("edit-modal");
+    const companyModal = document.getElementById("company-modal");
     if (event.target == editModal) {
       closeEditModal();
     }
+    if (event.target == companyModal) {
+      companyModal.style.display = "none";
+    }
   };
+
+  // 💖 [새로 추가된 부분]: 페이지 로드 시 마지막으로 분석한 기업 정보 로드
+  try {
+    const lastAnalysisResponse = await fetch("/api/load_last_company_analysis");
+    if (lastAnalysisResponse.ok) {
+      const lastAnalysis = await lastAnalysisResponse.json();
+      // 데이터가 존재하고, 기업명이 있으면 화면에 표시
+      if (lastAnalysis && lastAnalysis.company_name) {
+        companyNameInput.value = lastAnalysis.company_name;
+        renderCompanyAnalysis(lastAnalysis);
+        document.getElementById("company-analysis-area").style.display =
+          "block";
+      }
+    } else {
+      console.warn("이전에 분석한 기업 데이터가 없습니다.");
+    }
+  } catch (error) {
+    console.error("마지막 기업 분석 데이터를 불러오는 중 오류 발생:", error);
+  }
+
+  // 기업 분석 버튼 클릭 이벤트 리스너 추가
+  analyzeCompanyButton.addEventListener("click", async () => {
+    const companyName = companyNameInput.value.trim();
+    if (!companyName) {
+      alert("기업명을 입력해주세요.");
+      return;
+    }
+
+    showLoading(
+      true,
+      "AI가 기업을 분석 중...",
+      companyLoadingOverlay,
+      companyLoadingMessage
+    );
+
+    try {
+      const response = await fetch("/api/analyze_company", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          company_name: companyName,
+        }),
+      });
+
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.detail || "기업 분석에 실패했습니다.");
+      }
+
+      const result = await response.json();
+      const companyAnalysis = result.company_analysis;
+
+      // JSON 문자열 대신, 동적으로 HTML을 생성하여 표시
+      renderCompanyAnalysis(companyAnalysis);
+
+      // `companyAnalysisResult` 대신 `companyAnalysisArea`를 표시
+      document.getElementById("company-analysis-area").style.display = "block";
+    } catch (error) {
+      alert(`기업 분석 중 오류가 발생했습니다: ${error.message}`);
+      // `companyAnalysisResult` 대신 `companyAnalysisArea`를 숨김
+      document.getElementById("company-analysis-area").style.display = "none";
+    } finally {
+      showLoading(false, null, companyLoadingOverlay, companyLoadingMessage);
+    }
+  });
+
+  /**
+   * AI 기업 분석 결과를 동적으로 생성하여 표시합니다.
+   * @param {Object} analysisData - AI 분석 결과 JSON 객체.
+   */
+  function renderCompanyAnalysis(analysisData) {
+    // JSON 키를 한국어 제목으로 매핑하는 객체
+    const koreanTitles = {
+      company_summary: "기업 개요",
+      key_values: "핵심 가치",
+      competencies_to_highlight: "강조할 역량",
+      interview_tips: "면접 팁",
+    };
+
+    // 기존 내용을 지우고 새로운 내용을 추가할 준비
+    companyAnalysisText.innerHTML = "";
+
+    if (!analysisData || Object.keys(analysisData).length === 0) {
+      companyAnalysisText.textContent = "분석 결과가 없습니다.";
+      return;
+    }
+
+    // 각 항목을 순회하며 HTML을 생성
+    for (const key in analysisData) {
+      if (Object.prototype.hasOwnProperty.call(analysisData, key)) {
+        const value = analysisData[key];
+        const displayTitle = koreanTitles[key] || key; // 매핑된 한국어 제목 사용
+
+        const analysisSection = document.createElement("div");
+        analysisSection.className = "analysis-section";
+
+        const titleElement = document.createElement("h4");
+        titleElement.textContent = displayTitle;
+        analysisSection.appendChild(titleElement);
+
+        // 'competencies_to_highlight'는 배열이므로 별도로 처리
+        if (key === "competencies_to_highlight" && Array.isArray(value)) {
+          const listElement = document.createElement("ul");
+          value.forEach((item) => {
+            const listItem = document.createElement("li");
+            listItem.textContent = item;
+            listElement.appendChild(listItem);
+          });
+          analysisSection.appendChild(listElement);
+        } else {
+          const contentElement = document.createElement("p");
+          contentElement.textContent = value;
+          analysisSection.appendChild(contentElement);
+        }
+
+        companyAnalysisText.appendChild(analysisSection);
+      }
+    }
+  }
 });

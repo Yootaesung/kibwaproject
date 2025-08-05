@@ -356,3 +356,34 @@ button[type="submit"]:hover,
 .remove-qa:hover {
   background-color: #c82333 !important;
 }
+/* 기업 분석 결과 섹션 스타일 */
+.analysis-section {
+  margin-bottom: 20px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid #e9ecef; /* 각 항목 아래에 얇은 구분선 추가 */
+}
+
+.analysis-section:last-child {
+  border-bottom: none; /* 마지막 항목의 구분선 제거 */
+}
+
+.analysis-section h4 {
+  color: #0056b3; /* 제목 색상을 파란색으로 설정 */
+  margin-bottom: 5px;
+  font-size: 1.2em; /* 제목 글꼴 크기 조정 */
+}
+
+.analysis-section p,
+.analysis-section ul {
+  line-height: 1.6; /* 텍스트 줄 간격 설정 */
+  margin-top: 0; /* 단락 위쪽 여백 제거 */
+  margin-bottom: 0; /* 단락 아래쪽 여백 제거 */
+}
+
+.analysis-section ul {
+  padding-left: 20px; /* 리스트 들여쓰기 */
+}
+
+.analysis-section li {
+  margin-bottom: 5px;
+}

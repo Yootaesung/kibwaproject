@@ -1,5 +1,10 @@
 // static/js/diagramRenderer.js
-import { diagramContainer, editModal } from "./domElements.js";
+import {
+  diagramContainer,
+  editModal,
+  companyModal,
+  closeCompanyModalButton,
+} from "./domElements.js";
 import {
   jobTitle,
   documentData,
@@ -14,6 +19,7 @@ import {
   openEditModal,
   setAiFeedback,
   setModalTitle,
+  openCompanyModal,
 } from "./uiHandler.js";
 import { renderFormFields } from "./formRenderer.js";
 
@@ -24,29 +30,29 @@ export function setupNodeClickEvents() {
   // 롤백 버튼 이벤트 리스너
   document.querySelectorAll(".rollback-button").forEach((button) => {
     button.onclick = (e) => {
-      e.stopPropagation(); // 노드 클릭 이벤트와 중복 방지
+      e.stopPropagation();
       const docType = button.dataset.docType;
-      // dataset.version에서 해당 버튼이 되돌릴 버전을 가져옴
       const versionToRollback = parseInt(button.dataset.version, 10);
       rollbackDocument(docType, versionToRollback);
     };
   });
 
-  document.querySelectorAll(".diagram-node.document-node").forEach((node) => {
+  document.querySelectorAll(".diagram-node").forEach((node) => {
     node.onclick = async (e) => {
-      const clickedNode = e.target.closest(".document-node");
+      const clickedNode = e.target.closest(".diagram-node");
       const docType = clickedNode.dataset.docType;
+
+      if (docType === "company") {
+        openCompanyModal();
+        return;
+      }
+
+      if (!clickedNode.classList.contains("document-node")) {
+        return;
+      }
+
       const version = parseInt(clickedNode.dataset.version, 10);
-
       setCurrentDocInfo(docType, version);
-
-      const currentDocKoreanName = clickedNode.dataset.koreanName;
-
-      // 팝업을 열 때 해당 버전의 데이터를 불러옴
-      const versionData = getDocumentVersionData(docType, version);
-      const docContent = versionData.content;
-      const savedFeedback = versionData.feedback; // 이전 버전의 전체 피드백
-      const individualFeedbacks = versionData.individual_feedbacks || {}; // ⭐️ 추가: 이전 버전의 개별 피드백
 
       try {
         showLoading(true, "문서 스키마 로딩 중...");
@@ -65,32 +71,36 @@ export function setupNodeClickEvents() {
           .catch((error) => {
             console.error("Error fetching form schema:", error);
             alert("문서 스키마를 불러오는 데 실패했습니다. 콘솔을 확인하세요.");
-            editModal.style.display = "none"; // Hide modal if schema fetch fails
-            return null; // Return null to prevent further execution with invalid schema
+            editModal.style.display = "none";
+            return null;
           });
 
         if (!formSchema) {
-          showLoading(false); // 로딩 숨김
-          return; // Stop if schema fetch failed
+          showLoading(false);
+          return;
         }
 
-        console.log("Fetched Form Schema:", formSchema);
+        const docContent =
+          getDocumentVersionData(docType, version)?.content || {};
+        const savedFeedback =
+          getDocumentVersionData(docType, version)?.feedback || "";
+        const individualFeedbacks =
+          getDocumentVersionData(docType, version)?.individual_feedbacks || {};
 
-        renderFormFields(formSchema, docContent); // 불러온 데이터로 폼 필드 렌더링
-
-        // ⭐️ openEditModal 호출 시 개별 피드백과 문서 타입도 함께 전달
+        renderFormFields(formSchema, docContent);
+        setModalTitle(`${clickedNode.dataset.koreanName} 편집 (v${version})`);
         openEditModal(
-          `${currentDocKoreanName} 편집 (v${currentDocVersion})`,
+          `${clickedNode.dataset.koreanName} 편집 (v${version})`,
           savedFeedback,
-          individualFeedbacks, // ⭐️ 개별 피드백 전달
-          docType // ⭐️ 문서 타입 전달
+          individualFeedbacks,
+          docType
         );
       } catch (error) {
         console.error("An error occurred during node click event:", error);
         alert("문서 편집기를 여는 중 오류가 발생했습니다. 콘솔을 확인하세요.");
         editModal.style.display = "none";
       } finally {
-        showLoading(false); // 로딩 숨김
+        showLoading(false);
       }
     };
   });
@@ -100,62 +110,83 @@ export function setupNodeClickEvents() {
  * 다이어그램 그리기 함수 (수정됨)
  */
 export function drawDiagram() {
-  diagramContainer.innerHTML = ""; // 다이어그램 전체를 비우고 새로 그립니다.
+  diagramContainer.innerHTML = "";
 
-  // 1. 직무 노드 추가
   const jobNode = document.createElement("div");
-  jobNode.className = "diagram-node job-node";
-  jobNode.dataset.docType = "job";
-  jobNode.textContent = jobTitle;
+  jobNode.className = "diagram-node company-node";
+  jobNode.dataset.docType = "company";
+  jobNode.dataset.koreanName = "기업";
+  jobNode.textContent = "기업";
   diagramContainer.appendChild(jobNode);
 
-  // 2. 각 문서 타입별 '레인'을 담을 컨테이너 생성 (수평 배치용)
   const documentLanesContainer = document.createElement("div");
   documentLanesContainer.className = "document-lanes-container";
   diagramContainer.appendChild(documentLanesContainer);
 
-  // 3. 각 문서 타입(이력서, 자기소개서, 포트폴리오)별 '레인' 생성 및 노드 추가
   for (const docType in documentData) {
     const docLane = document.createElement("div");
     docLane.className = "document-lane";
     docLane.dataset.docType = docType;
-    documentLanesContainer.appendChild(docLane); // 레인 컨테이너에 레인 추가
+    documentLanesContainer.appendChild(docLane);
 
-    // 해당 문서 타입의 전체 버전 수
     const totalVersions = documentData[docType].length;
 
-    // 모든 버전을 순회하며 노드 생성
     for (let i = 0; i < totalVersions; i++) {
       const doc = documentData[docType][i];
-      const nodeVersion = doc.version; // 0, 1, 2, ...
-
+      const nodeVersion = doc.version;
       const nodeVersionGroup = document.createElement("div");
       nodeVersionGroup.className = "node-version-group";
 
       const node = document.createElement("div");
-      node.className = `diagram-node document-node v${nodeVersion}`; // 동적으로 vX 클래스 추가
+      node.className = `diagram-node document-node v${nodeVersion}`;
       node.dataset.docType = docType;
       node.dataset.version = nodeVersion;
       node.dataset.koreanName = doc.koreanName;
       node.textContent = doc.displayContent;
 
-      // 변경된 로직: 최신 버전이 아닌 모든 노드에 되돌리기 버튼 추가
       if (nodeVersion < totalVersions - 1) {
-        // 최신 버전(totalVersions - 1)을 제외한 모든 이전 버전에 버튼 추가
         const rollbackButton = document.createElement("button");
         rollbackButton.className = "rollback-button";
-        rollbackButton.textContent = `v${nodeVersion} 되돌리기`; // 버튼 텍스트에 되돌릴 버전 명시
+        rollbackButton.textContent = `v${nodeVersion} 되돌리기`;
         rollbackButton.dataset.docType = docType;
-        rollbackButton.dataset.version = nodeVersion; // 해당 노드의 버전으로 되돌리도록 설정
+        rollbackButton.dataset.version = nodeVersion;
         node.appendChild(rollbackButton);
       }
+
+      node.querySelector(".rollback-button")?.addEventListener("click", (e) => {
+        e.stopPropagation();
+      });
 
       nodeVersionGroup.appendChild(node);
       docLane.appendChild(nodeVersionGroup);
     }
   }
-  setupNodeClickEvents(); // 새로 생성된 노드들에 이벤트 리스너 다시 설정
+
+  if (closeCompanyModalButton) {
+    closeCompanyModalButton.onclick = () => {
+      companyModal.style.display = "none";
+    };
+  }
+
+  setupNodeClickEvents();
 }
+
+function getKoreanNameForDisplay(docType) {
+  switch (docType) {
+    case "resume":
+      return "이력서";
+    case "cover_letter":
+      return "자기소개서";
+    case "portfolio":
+      return "포트폴리오";
+    case "company":
+      return "기업";
+    default:
+      return docType;
+  }
+}
+
+// rollbackDocument 함수는 변경사항이 없으므로, 원본 그대로 유지됩니다.
 
 // 문서 되돌리기 함수 (선택된 버전으로 되돌림)
 export async function rollbackDocument(docType, versionToRollback) {
