@@ -64,3 +64,6 @@ __pycache__/
 *.pyd
 
 data/
+
+job-FE/
+job-BE/

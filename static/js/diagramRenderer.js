@@ -23,11 +23,80 @@ import {
 } from "./uiHandler.js";
 import { renderFormFields } from "./formRenderer.js";
 
+/** ================================
+ *  공통: API 베이스/토큰/슬러그 유틸
+ *  ================================ */
+const ROOT_PREFIX = window.location.pathname.startsWith("/text") ? "/text" : "";
+const API_BASE = `${ROOT_PREFIX}/apiText`;
+
+function getToken() {
+  return localStorage.getItem("token") || sessionStorage.getItem("token") || "";
+}
+
+function slugifyAndEncode(title) {
+  const slug = title.replace(/ /g, "-").replace(/\//g, "-").toLowerCase();
+  return encodeURIComponent(slug);
+}
+
+/** 프로필 불러오기 (마이페이지 저장 내용) */
+async function fetchUserProfile() {
+  const res = await fetch(`${API_BASE}/user_profile`, {
+    headers: { Authorization: `Bearer ${getToken()}` },
+  });
+  if (!res.ok) {
+    throw new Error(`user_profile ${res.status}`);
+  }
+  return res.json();
+}
+
+/** 프로필 → 이력서 폼 데이터 매핑 */
+function profileToResumeContent(profile) {
+  return {
+    education: Array.isArray(profile.education) ? profile.education : [],
+    activities: Array.isArray(profile.activities) ? profile.activities : [],
+    awards: Array.isArray(profile.awards) ? profile.awards : [],
+    certificates: Array.isArray(profile.certificates) ? profile.certificates : [],
+  };
+}
+
+/** 이력서 내용이 실질적으로 비었는지(placeholder 행만 있는 경우도 비었다고 판단) */
+function isEmptyResumeContent(content) {
+  if (!content) return true;
+
+  const isEmptyObjRow = (row) => {
+    if (!row || typeof row !== "object") return true;
+    return Object.values(row).every((v) => {
+      if (v == null) return true;
+      if (typeof v === "string") return v.trim() === "";
+      return false;
+    });
+  };
+
+  const isEmptyStr = (s) => typeof s !== "string" || s.trim() === "";
+
+  const ed = Array.isArray(content.education) ? content.education : [];
+  const ac = Array.isArray(content.activities) ? content.activities : [];
+  const aw = Array.isArray(content.awards) ? content.awards : [];
+  const ct = Array.isArray(content.certificates) ? content.certificates : [];
+
+  const hasMeaningfulEducation = ed.some((r) => !isEmptyObjRow(r));
+  const hasMeaningfulActivities = ac.some((r) => !isEmptyObjRow(r));
+  const hasMeaningfulAwards = aw.some((r) => !isEmptyObjRow(r));
+  const hasMeaningfulCertificates = ct.some((s) => !isEmptyStr(s));
+
+  return !(
+    hasMeaningfulEducation ||
+    hasMeaningfulActivities ||
+    hasMeaningfulAwards ||
+    hasMeaningfulCertificates
+  );
+}
+
 /**
- * 다이어그램 노드 클릭 이벤트를 설정합니다.
+ * 다이어그램 노드 클릭 이벤트 설정
  */
 export function setupNodeClickEvents() {
-  // 롤백 버튼 이벤트 리스너
+  // 롤백 버튼
   document.querySelectorAll(".rollback-button").forEach((button) => {
     button.onclick = (e) => {
       e.stopPropagation();
@@ -37,6 +106,7 @@ export function setupNodeClickEvents() {
     };
   });
 
+  // 노드 클릭
   document.querySelectorAll(".diagram-node").forEach((node) => {
     node.onclick = async (e) => {
       const clickedNode = e.target.closest(".diagram-node");
@@ -46,46 +116,44 @@ export function setupNodeClickEvents() {
         openCompanyModal();
         return;
       }
-
-      if (!clickedNode.classList.contains("document-node")) {
-        return;
-      }
+      if (!clickedNode.classList.contains("document-node")) return;
 
       const version = parseInt(clickedNode.dataset.version, 10);
       setCurrentDocInfo(docType, version);
 
       try {
         showLoading(true, "문서 스키마 로딩 중...");
-        const formSchema = await fetch(
-          `/api/document_schema/${currentDocType}?job_slug=${jobTitle
-            .replace(/ /g, "-")
-            .replace(/\//g, "-")
-            .toLowerCase()}`
-        )
-          .then((res) => {
-            if (!res.ok) {
-              throw new Error(`HTTP error! status: ${res.status}`);
-            }
-            return res.json();
-          })
-          .catch((error) => {
-            console.error("Error fetching form schema:", error);
-            alert("문서 스키마를 불러오는 데 실패했습니다. 콘솔을 확인하세요.");
-            editModal.style.display = "none";
-            return null;
-          });
 
-        if (!formSchema) {
-          showLoading(false);
-          return;
-        }
+        // 스키마 요청
+        const jobSlug = slugifyAndEncode(jobTitle);
+        const schemaUrl = `${API_BASE}/document_schema/${currentDocType}?job_slug=${jobSlug}`;
+        const formSchema = await fetch(schemaUrl).then((res) => {
+          if (!res.ok) throw new Error(`서버 응답 오류: ${res.status}`);
+          return res.json();
+        });
 
-        const docContent =
-          getDocumentVersionData(docType, version)?.content || {};
-        const savedFeedback =
-          getDocumentVersionData(docType, version)?.feedback || "";
+        // 현재 버전 데이터
+        let versionData = getDocumentVersionData(docType, version);
+        let docContent = versionData?.content || {};
+        const savedFeedback = versionData?.feedback || "";
         const individualFeedbacks =
-          getDocumentVersionData(docType, version)?.individual_feedbacks || {};
+          versionData?.individual_feedbacks || {};
+
+        // 이력서면, 내용이 사실상 비어있으면 프로필로 자동 채움
+        if (docType === "resume" && isEmptyResumeContent(docContent)) {
+          try {
+            const profile = await fetchUserProfile();
+            const resumeDefaults = profileToResumeContent(profile);
+            docContent = {
+              education: resumeDefaults.education,
+              activities: resumeDefaults.activities,
+              awards: resumeDefaults.awards,
+              certificates: resumeDefaults.certificates,
+            };
+          } catch (err) {
+            console.warn("프로필 불러오기 실패(이력서 기본값 생략):", err);
+          }
+        }
 
         renderFormFields(formSchema, docContent);
         setModalTitle(`${clickedNode.dataset.koreanName} 편집 (v${version})`);
@@ -93,11 +161,13 @@ export function setupNodeClickEvents() {
           `${clickedNode.dataset.koreanName} 편집 (v${version})`,
           savedFeedback,
           individualFeedbacks,
-          docType
+          docType // 포트폴리오 포함 개별 피드백 표시 가능
         );
       } catch (error) {
-        console.error("An error occurred during node click event:", error);
-        alert("문서 편집기를 여는 중 오류가 발생했습니다. 콘솔을 확인하세요.");
+        console.error("노드 클릭 처리 중 오류:", error);
+        alert(
+          "문서 편집기를 여는 중 오류가 발생했습니다. 네트워크나 서버를 확인하세요."
+        );
         editModal.style.display = "none";
       } finally {
         showLoading(false);
@@ -107,7 +177,7 @@ export function setupNodeClickEvents() {
 }
 
 /**
- * 다이어그램 그리기 함수 (수정됨)
+ * 다이어그램 그리기
  */
 export function drawDiagram() {
   diagramContainer.innerHTML = "";
@@ -171,92 +241,95 @@ export function drawDiagram() {
   setupNodeClickEvents();
 }
 
-function getKoreanNameForDisplay(docType) {
-  switch (docType) {
-    case "resume":
-      return "이력서";
-    case "cover_letter":
-      return "자기소개서";
-    case "portfolio":
-      return "포트폴리오";
-    case "company":
-      return "기업";
-    default:
-      return docType;
-  }
-}
-
-// rollbackDocument 함수는 변경사항이 없으므로, 원본 그대로 유지됩니다.
-
-// 문서 되돌리기 함수 (선택된 버전으로 되돌림)
+/**
+ * 문서 되돌리기
+ */
 export async function rollbackDocument(docType, versionToRollback) {
   const docName = documentData[docType][0]
     ? documentData[docType][0].koreanName
-    : docType; // v0 노드의 한글 이름 사용
+    : docType;
 
-  if (
-    confirm(`${docName}를 v${versionToRollback} 버전으로 되돌리시겠습니까?`)
-  ) {
-    // 1. 클라이언트 측 documentData 업데이트 (버전 잘라내기)
-    truncateDocumentVersions(docType, versionToRollback);
+  if (!confirm(`${docName}를 v${versionToRollback} 버전으로 되돌리시겠습니까?`))
+    return;
 
-    // 2. 서버에 삭제 요청
-    showLoading(true, "데이터베이스 롤백 중...");
-    try {
-      const response = await fetch(
-        `/api/rollback_document/${docType}/${jobTitle
-          .replace(/ /g, "-")
-          .replace(/\//g, "-")
-          .toLowerCase()}/${versionToRollback}`,
-        {
-          method: "DELETE",
-        }
-      );
-      if (!response.ok) {
-        const errorResult = await response.json();
-        throw new Error(errorResult.detail || "서버 롤백 실패");
+  truncateDocumentVersions(docType, versionToRollback);
+
+  showLoading(true, "데이터베이스 롤백 중...");
+  try {
+    const jobSlug = slugifyAndEncode(jobTitle);
+
+    const response = await fetch(
+      `${API_BASE}/rollback_document/${docType}/${jobSlug}/${versionToRollback}`,
+      {
+        method: "DELETE",
+        headers: { Authorization: `Bearer ${getToken()}` },
       }
-      alert(`${docName}가 v${versionToRollback} 버전으로 되돌려졌습니다.`);
-    } catch (error) {
-      console.error("Rollback API error:", error);
-      alert(`롤백 중 오류가 발생했습니다: ${error.message}`);
-      // If DB rollback fails, client-side data might be inconsistent with DB.
-      // For robustness, could reload from DB here or prompt user.
-    } finally {
-      showLoading(false);
+    );
+    if (!response.ok) {
+      let errMsg = `서버 롤백 실패 (${response.status})`;
+      try {
+        const errorResult = await response.json();
+        errMsg = errorResult.detail || errMsg;
+      } catch (_) {}
+      throw new Error(errMsg);
     }
+    alert(`${docName}가 v${versionToRollback} 버전으로 되돌려졌습니다.`);
+  } catch (error) {
+    console.error("Rollback API error:", error);
+    alert(`롤백 중 오류: ${error.message}`);
+  } finally {
+    showLoading(false);
+  }
 
-    setCurrentDocInfo(docType, versionToRollback);
+  setCurrentDocInfo(docType, versionToRollback);
 
-    drawDiagram(); // 다이어그램 다시 그리기
+  // 모달 먼저 갱신
+  if (editModal.style.display === "block" && currentDocType === docType) {
+    const versionData = getDocumentVersionData(docType, versionToRollback);
+    if (versionData) {
+      try {
+        const jobSlug = slugifyAndEncode(jobTitle);
+        const schemaUrl = `${API_BASE}/document_schema/${currentDocType}?job_slug=${jobSlug}`;
+        const schema = await fetch(schemaUrl).then((res) => {
+          if (!res.ok) throw new Error(`서버 응답 오류: ${res.status}`);
+          return res.json();
+        });
 
-    // 만약 현재 모달이 열려있고, 되돌려진 문서 타입과 같다면 모달 내용 업데이트
-    if (editModal.style.display === "block" && currentDocType === docType) {
-      const versionData = getDocumentVersionData(docType, versionToRollback); // 되돌려진 버전의 데이터 다시 로드
-      if (versionData) {
-        fetch(
-          `/api/document_schema/${currentDocType}?job_slug=${jobTitle
-            .replace(/ /g, "-")
-            .toLowerCase()}`
-        )
-          .then((res) => res.json())
-          .then((schema) => renderFormFields(schema, versionData.content))
-          .catch((error) =>
-            console.error("Error fetching schema on rollback:", error)
-          );
-        // ⭐️ setAiFeedback 호출 시 개별 피드백과 문서 타입도 함께 전달
+        // 이력서면 비어있을 때 프로필로 채움(롤백 후에도 동일 동작)
+        let content = versionData.content || {};
+        if (docType === "resume" && isEmptyResumeContent(content)) {
+          try {
+            const profile = await fetchUserProfile();
+            const resumeDefaults = profileToResumeContent(profile);
+            content = {
+              education: resumeDefaults.education,
+              activities: resumeDefaults.activities,
+              awards: resumeDefaults.awards,
+              certificates: resumeDefaults.certificates,
+            };
+          } catch (e) {
+            console.warn("프로필 불러오기 실패(롤백 후 기본값 생략):", e);
+          }
+        }
+
+        renderFormFields(schema, content);
         setAiFeedback(
           versionData.feedback || "",
-          versionData.individual_feedbacks || {}, // ⭐️ 개별 피드백 전달
-          docType // ⭐️ 문서 타입 전달
+          versionData.individual_feedbacks || {},
+          docType // 포트폴리오 포함
         );
         setModalTitle(
           `${versionData.koreanName} 편집 (v${versionData.version})`
         );
-      } else {
-        editModal.style.display = "none";
-        alert("문서가 초기화되어 현재 편집 중인 내용이 없습니다.");
+      } catch (err) {
+        console.error("Error fetching schema on rollback:", err);
       }
+    } else {
+      editModal.style.display = "none";
+      alert("문서가 초기화되어 현재 편집 중인 내용이 없습니다.");
     }
   }
+
+  // 모달 갱신 후 다이어그램 다시 그림
+  drawDiagram();
 }

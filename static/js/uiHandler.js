@@ -14,11 +14,7 @@ import {
 import { saveCurrentFormContent } from "./documentData.js";
 
 /**
- * 로딩 오버레이를 표시하거나 숨깁니다.
- * @param {boolean} show - true면 표시, false면 숨김
- * @param {string} message - 로딩 메시지
- * @param {HTMLElement} overlayElement - 로딩 오버레이 요소
- * @param {HTMLElement} messageElement - 로딩 메시지 요소
+ * 로딩 오버레이 표시/숨김
  */
 export function showLoading(
   show,
@@ -28,12 +24,15 @@ export function showLoading(
 ) {
   const overlay = overlayElement || loadingOverlay;
   const msgEl = messageElement || loadingMessage;
+  if (!overlay) return;
+
   if (show) {
     overlay.style.display = "flex";
     if (msgEl) {
       msgEl.textContent = message;
     } else {
-      overlay.querySelector("p").textContent = message;
+      const p = overlay.querySelector("p");
+      if (p) p.textContent = message;
     }
   } else {
     overlay.style.display = "none";
@@ -41,11 +40,7 @@ export function showLoading(
 }
 
 /**
- * 모달을 엽니다.
- * @param {string} title - 모달 제목
- * @param {string} [overallFeedback=""] - AI의 전체 피드백 (선택 사항)
- * @param {object} [individualFeedbacks={}] - AI의 개별 항목 피드백 객체 (선택 사항)
- * @param {string} [docType=""] - 현재 문서 타입 (예: 'cover_letter', 'resume', 'portfolio')
+ * 모달 열기/닫기
  */
 export function openEditModal(
   title,
@@ -56,14 +51,14 @@ export function openEditModal(
   modalTitle.textContent = title;
   setAiFeedback(overallFeedback, individualFeedbacks, docType);
   editModal.style.display = "block";
+  editModal.scrollTop = 0;
 }
 
-/**
- * 모달을 닫습니다.
- */
 export function closeEditModal() {
   saveCurrentFormContent();
   editModal.style.display = "none";
+  editModal.scrollTop = 0;
+
   if (aiOverallFeedbackContent) aiOverallFeedbackContent.textContent = "";
   if (aiIndividualFeedbacksContainer)
     aiIndividualFeedbacksContainer.innerHTML = "";
@@ -71,10 +66,10 @@ export function closeEditModal() {
 }
 
 /**
- * AI 피드백 내용을 모달에 설정합니다.
- * @param {string} overallFeedback - 전체 피드백
- * @param {object} individualFeedbacks - 개별 항목 피드백 객체
- * @param {string} docType - 문서 타입 ('resume', 'cover_letter', 'portfolio')
+ * AI 피드백 세팅
+ * - 이력서: education / activities / awards / certificates
+ * - 자소서: reason_for_application / expertise_experience / collaboration_experience / challenging_goal_experience / growth_process
+ * - 포트폴리오: portfolio_link / file_name 등(있으면 표시)
  */
 export function setAiFeedback(overallFeedback, individualFeedbacks, docType) {
   if (
@@ -86,73 +81,110 @@ export function setAiFeedback(overallFeedback, individualFeedbacks, docType) {
     return;
   }
 
-  aiOverallFeedbackContent.textContent = overallFeedback;
+  aiOverallFeedbackContent.textContent = overallFeedback || "";
+  aiOverallFeedbackContent.style.whiteSpace = "pre-line";
 
   aiIndividualFeedbacksContainer.innerHTML = "";
-  if (
-    Object.keys(individualFeedbacks).length > 0 &&
-    (docType === "cover_letter" || docType === "resume")
-  ) {
-    const qaLabels = {
-      // 이력서 항목
-      education_history: "학력",
-      career_history: "경력",
-      certifications: "자격증",
-      awards_activities: "수상/대외활동",
-      skills_tech: "기술 스택",
-      // 자기소개서 항목
-      reason_for_application: "지원 동기",
-      expertise_experience: "전문성 경험",
-      collaboration_experience: "협업 경험",
-      challenging_goal_experience: "도전적 경험",
-      growth_process: "성장 과정",
-      languages: "어학 능력",
-    };
 
+  const labelMap = {
+    // 이력서 (신규 스키마)
+    education: "학력",
+    activities: "대외활동",
+    awards: "수상경력",
+    certificates: "자격증",
+
+    // 자기소개서
+    reason_for_application: "지원 동기",
+    expertise_experience: "전문성 경험",
+    collaboration_experience: "협업 경험",
+    challenging_goal_experience: "도전적 경험",
+    growth_process: "성장 과정",
+
+    // 포트폴리오
+    portfolio_link: "포트폴리오 링크",
+    file_name: "파일명",
+  };
+
+  const validDocTypes = ["cover_letter", "resume", "portfolio"];
+  const hasIndividual =
+    individualFeedbacks && Object.keys(individualFeedbacks).length > 0;
+
+  if (hasIndividual && validDocTypes.includes(docType)) {
     const fragment = document.createDocumentFragment();
 
-    for (const fieldName in individualFeedbacks) {
-      if (Object.hasOwnProperty.call(individualFeedbacks, fieldName)) {
-        const feedbackText = individualFeedbacks[fieldName];
-        const label = qaLabels[fieldName] || fieldName;
+    // key 순서 가독성(이력서 우선 정렬)
+    const preferredOrder =
+      docType === "resume"
+        ? ["education", "activities", "awards", "certificates"]
+        : Object.keys(individualFeedbacks);
 
-        const feedbackItemDiv = document.createElement("div");
-        feedbackItemDiv.className = "individual-feedback-item";
-        feedbackItemDiv.style.marginBottom = "10px";
+    const printed = new Set();
+    preferredOrder.forEach((k) => {
+      if (k in individualFeedbacks) {
+        const feedbackText = individualFeedbacks[k] || "";
+        const label = labelMap[k] || k;
 
-        const itemTitle = document.createElement("h5");
-        itemTitle.textContent = `${label} 피드백:`;
-        itemTitle.style.fontWeight = "bold";
-        itemTitle.style.marginBottom = "5px";
-        feedbackItemDiv.appendChild(itemTitle);
+        const itemDiv = document.createElement("div");
+        itemDiv.className = "individual-feedback-item";
+        itemDiv.style.marginBottom = "12px";
 
-        const itemContent = document.createElement("p");
-        itemContent.textContent = feedbackText;
-        itemContent.style.fontSize = "0.9em";
-        itemContent.style.lineHeight = "1.4";
-        feedbackItemDiv.appendChild(itemContent);
+        const title = document.createElement("h5");
+        title.textContent = `${label} 피드백:`;
+        title.style.fontWeight = "bold";
+        title.style.marginBottom = "5px";
 
-        fragment.appendChild(feedbackItemDiv);
+        const content = document.createElement("p");
+        content.textContent = feedbackText;
+        content.style.fontSize = "0.9em";
+        content.style.lineHeight = "1.4";
+        content.style.whiteSpace = "pre-line";
+
+        itemDiv.appendChild(title);
+        itemDiv.appendChild(content);
+        fragment.appendChild(itemDiv);
+        printed.add(k);
       }
-    }
+    });
+
+    // 나머지 키(있다면)
+    Object.keys(individualFeedbacks).forEach((k) => {
+      if (printed.has(k)) return;
+      const itemDiv = document.createElement("div");
+      itemDiv.className = "individual-feedback-item";
+      itemDiv.style.marginBottom = "12px";
+
+      const title = document.createElement("h5");
+      title.textContent = `${labelMap[k] || k} 피드백:`;
+      title.style.fontWeight = "bold";
+      title.style.marginBottom = "5px";
+
+      const content = document.createElement("p");
+      content.textContent = individualFeedbacks[k] || "";
+      content.style.fontSize = "0.9em";
+      content.style.lineHeight = "1.4";
+      content.style.whiteSpace = "pre-line";
+
+      itemDiv.appendChild(title);
+      itemDiv.appendChild(content);
+      fragment.appendChild(itemDiv);
+    });
+
     aiIndividualFeedbacksContainer.appendChild(fragment);
     aiIndividualFeedbacksContainer.style.display = "block";
-  } else if (aiIndividualFeedbacksContainer) {
+  } else {
     aiIndividualFeedbacksContainer.style.display = "none";
   }
 
-  if (aiFeedbackArea) {
-    aiFeedbackArea.style.display = overallFeedback ? "block" : "none";
-  }
+  aiFeedbackArea.style.display =
+    overallFeedback || hasIndividual ? "block" : "none";
 }
 
-// 기업 분석 모달 관련 함수
+// 기업 분석 모달
 export function openCompanyModal() {
-  companyModal.style.display = "block";
+  if (companyModal) companyModal.style.display = "block";
 }
-
 export function closeCompanyModal() {
-  companyModal.style.display = "none";
+  if (companyModal) companyModal.style.display = "none";
 }
 
 export function setModalTitle(title) {
